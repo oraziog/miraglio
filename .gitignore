@@ -1,0 +1,43 @@
+# ---------------------------------------------------------------------------
+# Output di build: mai versionati (l'APK debug pesa ~141 MB)
+# ---------------------------------------------------------------------------
+build/
+app/build/
+.gradle/
+.kotlin/
+*.apk
+*.aab
+*.apk.idsig
+
+# ---------------------------------------------------------------------------
+# Configurazione locale della macchina (percorso dell'SDK Android)
+# ---------------------------------------------------------------------------
+local.properties
+
+# ---------------------------------------------------------------------------
+# Stato degli strumenti / agenti di sviluppo
+# ---------------------------------------------------------------------------
+.freebuff/
+
+# ---------------------------------------------------------------------------
+# IDE
+# ---------------------------------------------------------------------------
+.idea/
+*.iml
+captures/
+.externalNativeBuild/
+.cxx/
+
+# ---------------------------------------------------------------------------
+# Sistema operativo
+# ---------------------------------------------------------------------------
+Thumbs.db
+.DS_Store
+
+# ---------------------------------------------------------------------------
+# Artefatti derivati, presenti nella cartella dei sorgenti
+# ---------------------------------------------------------------------------
+# Dump unico di tutti i .kt, rigenerabile con app/src/main/UnisciKotlin.ps1
+app/src/main/Codice_klotin_Unito.txt
+# Backup dell'intero sorgente: non fa parte del progetto
+app/src/main/*.7z
