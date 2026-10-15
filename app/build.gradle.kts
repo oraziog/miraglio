@@ -145,6 +145,8 @@ dependencies {
     implementation(libs.coroutines.core)
     implementation(libs.coroutines.android)
 
-    // Test: solo il confronto fra versioni, che decide se l'app si aggiorna.
+    // Test: solo il confronto fra versioni e la lettura della risposta di
+    // GitHub, cioe' le due cose che decidono se e come l'app si aggiorna.
     testImplementation(libs.junit)
+    testImplementation(libs.json)
 }

@@ -1,12 +1,9 @@
 package com.miraglio.data.update
 
 import com.miraglio.BuildConfig
-import com.miraglio.domain.update.AppVersion
 import com.miraglio.domain.update.ReleaseInfo
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import org.json.JSONArray
-import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
 import javax.inject.Inject
@@ -48,8 +45,9 @@ class GitHubReleasesClient @Inject constructor() {
                 when (val code = connection.responseCode) {
                     // Repository senza nessuna release pubblicata: non e' un errore.
                     HttpURLConnection.HTTP_NOT_FOUND -> null
-                    HttpURLConnection.HTTP_OK ->
-                        parse(connection.inputStream.bufferedReader().use { it.readText() })
+                    HttpURLConnection.HTTP_OK -> ReleaseJson.releaseFrom(
+                        connection.inputStream.bufferedReader().use { it.readText() }
+                    )
                     else -> error("GitHub ha risposto $code")
                 }
             } finally {
@@ -57,37 +55,6 @@ class GitHubReleasesClient @Inject constructor() {
             }
         }
     }
-
-    private fun parse(json: String): ReleaseInfo {
-        val release = JSONObject(json)
-        val tag = release.getString("tag_name")
-        val version = AppVersion.parse(tag)
-            ?: error("Etichetta di release non riconosciuta: $tag")
-        val apk = apkAsset(release.optJSONArray("assets"))
-            ?: error("La release $tag non ha nessun APK allegato")
-        return ReleaseInfo(
-            tagName = tag,
-            version = version,
-            notes = release.optString("body").trim(),
-            apkUrl = apk.url,
-            apkSizeBytes = apk.sizeBytes
-        )
-    }
-
-    /** Primo allegato che e' un APK: e' quello che il flusso di release pubblica. */
-    private fun apkAsset(assets: JSONArray?): ApkAsset? {
-        if (assets == null) return null
-        for (i in 0 until assets.length()) {
-            val asset = assets.optJSONObject(i) ?: continue
-            if (!asset.optString("name").endsWith(".apk", ignoreCase = true)) continue
-            val url = asset.optString("browser_download_url")
-            if (url.isEmpty()) continue
-            return ApkAsset(url, asset.optLong("size", 0L))
-        }
-        return null
-    }
-
-    private data class ApkAsset(val url: String, val sizeBytes: Long)
 
     private companion object {
         const val TIMEOUT_MS = 10_000
