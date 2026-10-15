@@ -84,6 +84,33 @@ compensato automaticamente**: puoi zoomare liberamente senza ricalibrare.
 
 ---
 
+## Aggiornamenti
+
+L'app si aggiorna da sola quando viene pubblicata una versione nuova, senza
+passare dal Play Store e **senza perdere niente di quello che hai salvato**.
+
+- **All'avvio** l'app chiede a GitHub qual è l'ultima versione: è una richiesta
+  sola, non viene inviato nessun dato tuo, e se non c'è rete non si vede nulla.
+- Puoi anche controllare a mano: **Impostazioni → Aggiornamenti**, dove vedi la
+  versione installata e il bottone **Controlla aggiornamenti**.
+- Se c'è una versione più recente compare un avviso con le novità. Premi
+  **Scarica e installa**: l'APK viene scaricato (con la percentuale) e Android
+  apre la sua schermata di conferma. **L'app non installa niente da sola**:
+  l'ultima parola è sempre tua.
+- La prima volta Android chiede di autorizzare Miraglio a installare app
+  ("installa app sconosciute"): l'app apre la schermata giusta, attiva la voce e
+  torna indietro.
+- Durante il download c'è **Annulla**; con **Più tardi** rimandi
+  l'aggiornamento (quella versione non te la ripropone più in quella sessione,
+  ma resta disponibile nelle Impostazioni).
+- **Luoghi, foto e calibrazioni restano**: si sostituisce l'app, non i dati.
+
+Se l'installazione non parte le cause sono quasi sempre due: manca
+l'autorizzazione di cui sopra, oppure il download si è interrotto (in quel caso
+basta riprovare: l'app se ne accorge e non ti fa installare un file incompleto).
+
+---
+
 ## Suggerimenti per la precisione
 
 - Misura sempre distanza e dimensione note con strumenti affidabili.

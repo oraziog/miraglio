@@ -14,16 +14,47 @@ android {
         applicationId = "com.miraglio"
         minSdk = 26
         targetSdk = 35
-        versionCode = 2
-        versionName = "1.0.1"
+        // La versione deve alzarsi a ogni release pubblicata: l'app confronta
+        // la propria con l'etichetta della release piu' recente su GitHub e
+        // propone l'aggiornamento solo se quella e' piu' alta. Etichetta e
+        // versione vanno mantenute allineate (tag v1.0.2 = versionName 1.0.2).
+        versionCode = 3
+        versionName = "1.0.2"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        // Repository da cui l'app legge le release (owner/nome). Finisce nel
+        // BuildConfig, quindi cambiando repository si cambia questa riga.
+        buildConfigField("String", "UPDATE_REPO", "\"oraziog/miraglio\"")
+    }
+
+    // Firma: si riusa la chiave di debug della macchina, la stessa con cui
+    // l'app e' gia' installata sul telefono. Non e' una scelta di comodo: una
+    // chiave diversa renderebbe impossibile aggiornare, perche' Android
+    // rifiuta un APK firmato da altri e obbliga a disinstallare (perdendo
+    // luoghi e calibrazioni). Il prezzo e' che quella chiave non e' segreta,
+    // quindi chiunque potrebbe firmare un APK che il telefono accetterebbe
+    // come aggiornamento di questo: accettabile per un app personale, da
+    // cambiare con una chiave dedicata se un giorno la distribuisci ad altri.
+    //
+    // In CI la chiave arriva dai segreti del repository (variabili d'ambiente
+    // impostate dal workflow), e i valori predefiniti sono quelli noti della
+    // chiave di debug di Android.
+    signingConfigs {
+        create("release") {
+            val debugKeystore = File(System.getProperty("user.home"), ".android/debug.keystore")
+            storeFile = File(System.getenv("KEYSTORE_PATH") ?: debugKeystore.path)
+            storePassword = System.getenv("KEYSTORE_PASSWORD") ?: "android"
+            keyAlias = System.getenv("KEY_ALIAS") ?: "androiddebugkey"
+            keyPassword = System.getenv("KEY_PASSWORD") ?: "android"
+        }
     }
 
     buildTypes {
         release {
             isMinifyEnabled = true
             isShrinkResources = true
+            signingConfig = signingConfigs.getByName("release")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
@@ -113,4 +144,7 @@ dependencies {
     // Coroutines
     implementation(libs.coroutines.core)
     implementation(libs.coroutines.android)
+
+    // Test: solo il confronto fra versioni, che decide se l'app si aggiorna.
+    testImplementation(libs.junit)
 }

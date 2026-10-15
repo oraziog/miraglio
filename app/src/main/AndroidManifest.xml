@@ -7,6 +7,15 @@
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
 
+    <!-- Aggiornamento: lettura dell'ultima release su GitHub e scaricamento
+         dell'APK. Senza questa l'app funziona identica, ma non si aggiorna. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
+    <!-- Installazione dell'APK scaricato. L'app non installa nulla da sola:
+         apre la schermata di conferma del sistema. Da Android 8 in poi serve
+         anche che l'utente autorizzi Miraglio a installare app sconosciute. -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+
     <uses-feature android:name="android.hardware.camera.any" android:required="true" />
     <uses-feature android:name="android.hardware.sensor.accelerometer" android:required="true" />
     <uses-feature android:name="android.hardware.location.gps" android:required="false" />

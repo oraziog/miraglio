@@ -6,4 +6,10 @@
     <cache-path
         name="qr_share"
         path="share/" />
+    <!-- APK scaricato per l'aggiornamento: l'installatore di sistema riceve
+         il file come content:// (nessun permesso sull'archiviazione), e la
+         cartella resta visibile solo a questa app. -->
+    <cache-path
+        name="apk_update"
+        path="apk/" />
 </paths>

@@ -1,0 +1,72 @@
+name: Release APK
+
+# La pubblicazione parte dal tag, che e' anche la versione (v1.0.2): da quella
+# release l'app installata si accorge dell'aggiornamento e se lo installa.
+# Percio' prima di pubblicare si controlla che tag e versionName combacino:
+# un tag "v1.0.3" con versionName "1.0.2" produrrebbe un APK che l'app
+# installata non riconoscerebbe mai come piu' recente.
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Codice
+        uses: actions/checkout@v4
+        with:
+          # Serve la storia per le note di rilascio generate automaticamente.
+          fetch-depth: 0
+
+      - name: JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+
+      # La chiave di firma deve essere la stessa con cui e' installata l'app
+      # sul telefono: Android rifiuta un aggiornamento firmato da altri. Qui
+      # si rimette al suo posto la chiave di debug della macchina di sviluppo,
+      # presa dai segreti del repository (mai nel codice).
+      - name: Chiave di firma
+        env:
+          KEYSTORE_B64: ${{ secrets.KEYSTORE_B64 }}
+        run: |
+          if [ -z "$KEYSTORE_B64" ]; then
+            echo "::error::Manca il segreto KEYSTORE_B64: senza, l'APK sarebbe firmato con una chiave diversa da quella dell'app installata e l'aggiornamento verrebbe rifiutato."
+            exit 1
+          fi
+          mkdir -p "$HOME/.android"
+          printf '%s' "$KEYSTORE_B64" | base64 --decode > "$HOME/.android/debug.keystore"
+
+      - name: Tag e versione devono coincidere
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          VERSION="$(grep -oP 'versionName = "\K[^"]+' app/build.gradle.kts)"
+          echo "tag=$TAG  versionName=$VERSION"
+          if [ "$TAG" != "$VERSION" ]; then
+            echo "::error::Il tag $GITHUB_REF_NAME non corrisponde a versionName $VERSION in app/build.gradle.kts: alza la versione e rifai il tag."
+            exit 1
+          fi
+
+      - name: Test
+        run: ./gradlew --no-daemon testDebugUnitTest
+
+      - name: APK di release
+        run: ./gradlew --no-daemon assembleRelease
+
+      - name: Pubblica la release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          cp app/build/outputs/apk/release/app-release.apk "miraglio-${TAG#v}.apk"
+          gh release create "$TAG" "miraglio-${TAG#v}.apk" \
+            --title "Miraglio ${TAG#v}" \
+            --generate-notes

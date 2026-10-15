@@ -67,6 +67,18 @@ misura + coordinate), condivisibili come pin Google Maps, QR code o foto georefe
 - **Risparmio energetico**: in background sensori e GPS si spengono (tranne la
   finestra di grazia della misura GPS); tutto riparte al rientro in primo piano
 
+### Aggiornamenti dall'app (GitHub Releases)
+- **Controllo silenzioso all'avvio** (senza rete non si vede niente) e voce
+  **Aggiornamenti** in Impostazioni, con la versione installata e un bottone per
+  controllare a mano
+- Se c'è una versione più recente compare un dialog con le **note di rilascio**;
+  l'APK si scarica **solo quando lo chiedi** e l'**installazione la conferma
+  sempre Android** (l'app non installa niente da sola)
+- L'APK scaricato è **firmato con la stessa chiave** di quello installato,
+  quindi aggiornarsi **non cancella luoghi, foto e calibrazioni**
+- Il confronto fra versioni è **numerico**: `1.0.10` è più recente di `1.0.9`
+  (un confronto fra testi direbbe il contrario)
+
 ---
 
 ## Schermate
@@ -97,6 +109,9 @@ L'app si apre sulla schermata di **misura**; dal menu (☰) si raggiungono le al
 | GPS / Sensori | LocationManager (GPS + network), accelerometro/giroscopio, bussola |
 | Build | Gradle (Kotlin DSL), libs.versions.toml, AGP 8.7.3, Kotlin 2.1.0 |
 | Min SDK | 26 (Android 8.0) — Target/Compile SDK 35 |
+| Aggiornamenti | GitHub Releases REST API (`HttpURLConnection` + `org.json`), FileProvider → installatore di sistema |
+| Release / CI | GitHub Actions (tag `v*.*.*` → APK firmato → release pubblicata) |
+| Test | JUnit 4 (JVM) sul confronto versioni |
 
 ---
 
@@ -114,11 +129,13 @@ app/src/main/java/com/miraglio/
 │   ├── session/       # ShotVerificationStore (stima vs misura)
 │   ├── settings/      # AppSettingsStore (riconoscimento on/off)
 │   ├── share/         # QrCodeRenderer (ZXing), ShareImageComposer (banda + EXIF GPS)
+│   ├── update/        # GitHubReleasesClient, ApkDownloader, ApkInstaller, UpdateManager
 │   └── vision/        # YoloObjectDetector (ONNX), NoOpObjectDetector
 ├── domain/
 │   ├── camera/        # PinholeDistanceEstimator (d = K·f/pixel)
 │   ├── location/      # GpsFix, Haversine, TargetEstimator (bersaglio stimato)
 │   ├── share/         # ShareMessageComposer (messaggi con pin Maps)
+│   ├── update/        # AppVersion (confronto versioni), ReleaseInfo
 │   └── vision/        # ObjectDetector, DetectionBox, TargetScorer
 ├── di/                # Moduli Hilt (VisionModule)
 ├── power/             # BackgroundPowerController (sensori/GPS in background)
@@ -130,14 +147,17 @@ app/src/main/java/com/miraglio/
     ├── places/        # Elenco + dettaglio luogo, barra Salva/Condividi/QR
     ├── settings/      # Impostazioni
     ├── navigation/    # NavHost (Capture, Measurement, Places, Calibration, …)
+    ├── update/        # Dialog di aggiornamento (scaricamento + installazione)
     └── theme/         # Tema Material 3 (verde/arancio, chiaro/scuro)
 
 app/src/main/assets/models/yolov8n_hybrid.onnx   # modello di riconoscimento (~12 MB)
+app/src/test/java/com/miraglio/domain/update/     # test del confronto versioni
+.github/workflows/release.yml                    # tag -> APK firmato -> release
 ```
 
 ---
 
-## Stato corrente (v1.0.1, versionCode 2)
+## Stato corrente (v1.0.2, versionCode 3)
 
 | Funzione | Stato |
 |----------|-------|
@@ -148,8 +168,9 @@ app/src/main/assets/models/yolov8n_hybrid.onnx   # modello di riconoscimento (~1
 | Verifica distanza GPS (partenza→arrivo, errore stimato) | ✅ Funzionante |
 | Luoghi: salva/elenca/rinomina/elimina | ✅ Funzionante |
 | Condivisione: messaggio + pin Maps + QR + foto con EXIF GPS | ✅ Funzionante |
+| Aggiornamento dall'app (GitHub Releases) | ⚠️ Integrato, **da provare sul telefono** |
 | OCR testi (ML Kit) | ⚠️ Integrato ma **non attivo** sul flusso video attuale |
-| Test automatici | ❌ Assenti |
+| Test automatici | ⚠️ Solo il confronto versioni dell'aggiornamento |
 
 Note oneste:
 - La precisione senza calibrazione focale può essere peggiore del 30%: la guida
@@ -162,19 +183,49 @@ Note oneste:
 ## Compilazione
 
 ```bash
-# Dalla root del progetto (serve Gradle 8.11+ installato, oppure Android Studio)
-gradle assembleDebug
+# Dalla root del progetto (Gradle arriva dal wrapper, non serve installarlo)
+./gradlew assembleDebug     # APK di debug
+./gradlew assembleRelease   # APK di release, firmato (quello degli aggiornamenti)
+./gradlew check             # test + lint (lint con warningsAsErrors)
 ```
 
-Output: `app/build/outputs/apk/debug/app-debug.apk`
-
-> Gli script `gradlew`/`gradlew.bat` non sono inclusi nel repository: usa Gradle
-> installato localmente o genera il wrapper con `gradle wrapper`.
+Output: `app/build/outputs/apk/debug/app-debug.apk` e
+`app/build/outputs/apk/release/app-release.apk`
 
 ### Requisiti
 - JDK 17+
 - Android SDK 35
 - `local.properties` con `sdk.dir` (generato da Android Studio)
+
+---
+
+## Pubblicare una nuova versione
+
+Il tag è la versione: da quella release la vostra app installata si accorge
+dell'aggiornamento. Il workflow **rifiuta** la pubblicazione se tag e
+`versionName` non coincidono, perché produrrebbe un APK che nessuno vede come
+più recente.
+
+1. Alza **`versionCode`** e **`versionName`** in [app/build.gradle.kts](app/build.gradle.kts)
+   (es. `versionCode = 4`, `versionName = "1.0.3"`).
+2. Committa e spingi il tag:
+
+```bash
+git commit -am "Versione 1.0.3"
+git tag v1.0.3
+git push origin master v1.0.3
+```
+
+3. GitHub Actions compila, firma e pubblica la release con l'APK allegato
+   ([.github/workflows/release.yml](.github/workflows/release.yml)): si segue
+   in *Actions* su GitHub.
+4. Al primo avvio dopo la pubblicazione l'app installata avvisa che c'è la 1.0.3.
+
+La firma usata è la **chiave di debug della macchina di sviluppo**, la stessa
+con cui l'app è installata sul telefono: è la condizione perché l'aggiornamento
+sostituisca l'app senza disinstallarla (e senza perdere i dati). In CI la chiave
+arriva dal segreto `KEYSTORE_B64` del repository; il workflow non firma niente
+e si ferma con un errore se il segreto manca.
 
 ---
 
@@ -189,6 +240,14 @@ adb shell am start -n com.miraglio/.MainActivity
 In alternativa i script `send_apk.cmd` / `send_apk.ps1` inviano l'APK debug al
 telefono via [croc](https://getcroc.com) mostrando un QR code col link di ricezione.
 
+Una volta pubblicata, la release si può installare anche a mano (utile la prima
+volta, o per rimediare a un'installazione andata male): l'APK è allegato alla
+release più recente su <https://github.com/oraziog/miraglio/releases>.
+
+```bash
+adb install -r app/build/outputs/apk/release/app-release.apk
+```
+
 ---
 
 ## Permessi richiesti
@@ -196,6 +255,8 @@ telefono via [croc](https://getcroc.com) mostrando un QR code col link di ricezi
 - `CAMERA` — anteprima e misura
 - `ACCESS_FINE_LOCATION` / `ACCESS_COARSE_LOCATION` — posizione dello scatto, bersaglio stimato e verifica distanza
 - `VIBRATE` — feedback aptici
+- `INTERNET` — solo per chiedere a GitHub se c'è una versione nuova e scaricare l'APK; l'app per il resto funziona offline
+- `REQUEST_INSTALL_PACKAGES` — per affidare l'APK scaricato all'installatore di sistema: l'app non installa niente da sola, chiede sempre conferma ad Android. Da Android 8 in poi l'utente deve anche autorizzare *Installa app sconosciute* per Miraglio (l'app apre la schermata giusta). **Nota:** è un permesso che Google Play concede solo ad app la cui funzione principale è gestire pacchetti, quindi un'app che si aggiorna da GitHub difficilmente passerebbe la revisione sul Play Store: la distribuzione qui è via GitHub Releases.
 
 ---
 

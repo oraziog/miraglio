@@ -11,11 +11,13 @@ import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
@@ -33,6 +35,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.miraglio.data.update.UpdateManager
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -42,6 +45,7 @@ fun SettingsScreen(
 ) {
     val recognitionEnabled by viewModel.recognitionEnabled.collectAsState()
     val outdoorMode by viewModel.outdoorMode.collectAsState()
+    val updateState by viewModel.updateState.collectAsState()
 
     Scaffold(
         topBar = {
@@ -87,8 +91,125 @@ fun SettingsScreen(
                 containerColor = MaterialTheme.colorScheme.primaryContainer,
                 onToggle = viewModel::setOutdoorMode
             )
+            UpdateCard(
+                state = updateState,
+                installedVersion = viewModel.installedVersionName,
+                onCheck = viewModel::checkForUpdates,
+                onDownload = viewModel::downloadUpdate,
+                onCancelDownload = viewModel::cancelDownload,
+                onInstall = viewModel::installUpdate
+            )
         }
     }
+}
+
+/**
+ * Aggiornamenti: versione installata, esito dell'ultimo controllo e un solo
+ * bottone che fa la cosa giusta per lo stato in cui si trova.
+ */
+@Composable
+private fun UpdateCard(
+    state: UpdateManager.State,
+    installedVersion: String,
+    onCheck: () -> Unit,
+    onDownload: () -> Unit,
+    onCancelDownload: () -> Unit,
+    onInstall: () -> Unit
+) {
+    val containerColor = MaterialTheme.colorScheme.secondaryContainer
+    val secondaryText = contentColorFor(containerColor).copy(alpha = 0.8f)
+
+    val action: (() -> Unit)? = when (state) {
+        is UpdateManager.State.Checking -> null
+        is UpdateManager.State.Available,
+        is UpdateManager.State.Failed -> onDownload
+
+        is UpdateManager.State.ReadyToInstall,
+        is UpdateManager.State.PermissionRequired -> onInstall
+
+        is UpdateManager.State.Downloading -> onCancelDownload
+        else -> onCheck
+    }
+    val actionLabel = when (state) {
+        is UpdateManager.State.Checking -> "Controllo in corso..."
+        is UpdateManager.State.Available -> "Scarica e installa"
+        is UpdateManager.State.Failed -> "Riprova"
+        is UpdateManager.State.ReadyToInstall,
+        is UpdateManager.State.PermissionRequired -> "Installa"
+
+        is UpdateManager.State.Downloading -> "Annulla download"
+        else -> "Controlla aggiornamenti"
+    }
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = containerColor)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Text(
+                text = "Aggiornamenti",
+                fontWeight = FontWeight.Bold,
+                style = MaterialTheme.typography.titleMedium
+            )
+            Text(
+                text = "Versione installata: $installedVersion",
+                style = MaterialTheme.typography.bodySmall,
+                color = secondaryText
+            )
+            Text(
+                text = updateStatusText(state),
+                style = MaterialTheme.typography.bodySmall,
+                color = if (state is UpdateManager.State.Failed) {
+                    MaterialTheme.colorScheme.error
+                } else {
+                    secondaryText
+                }
+            )
+            if (state is UpdateManager.State.Downloading) {
+                val progress = state.progress
+                if (progress == null) {
+                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                } else {
+                    LinearProgressIndicator(
+                        progress = { progress },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            }
+            Button(
+                onClick = { action?.invoke() },
+                enabled = action != null
+            ) {
+                Text(actionLabel)
+            }
+        }
+    }
+}
+
+/** Riga di stato dell'aggiornamento, in parole povere. */
+private fun updateStatusText(state: UpdateManager.State): String = when (state) {
+    is UpdateManager.State.Idle -> "Non ancora controllato in questa sessione."
+    is UpdateManager.State.Checking -> "Chiedo a GitHub se c'e' una versione nuova..."
+    is UpdateManager.State.UpToDate -> "Sei all'ultima versione."
+    is UpdateManager.State.Available -> "Disponibile la versione " +
+        "${state.release.displayVersion}."
+
+    is UpdateManager.State.Downloading -> "Sto scaricando la versione " +
+        "${state.release.displayVersion}..."
+
+    is UpdateManager.State.ReadyToInstall -> "Versione ${state.release.displayVersion} " +
+        "scaricata, pronta da installare."
+
+    is UpdateManager.State.PermissionRequired -> "Prima concedi ad Android il " +
+        "permesso di installare app da Miraglio, poi premi Installa."
+
+    is UpdateManager.State.Failed -> "L'aggiornamento non e' riuscito: ${state.message}"
+    is UpdateManager.State.CheckFailed -> "Controllo non riuscito: ${state.message}"
 }
 
 /**
