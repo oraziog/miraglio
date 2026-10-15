@@ -72,6 +72,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.LifecycleOwner
+import com.miraglio.domain.format.ItalianFormat
 import com.miraglio.ui.capture.LineOrientation
 import kotlin.math.abs
 import kotlin.math.min
@@ -463,7 +464,7 @@ private fun FocalInputPanel(
                         TextButton(onClick = onCycleLens) { Text(it) }
                     }
                     TextButton(onClick = onZoomReset) {
-                        Text("${"%.1f".format(zoomRatio)}x")
+                        Text("${ItalianFormat.number(zoomRatio, 1)}x")
                     }
                 }
             } else {

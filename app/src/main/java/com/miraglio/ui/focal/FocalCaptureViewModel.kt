@@ -9,6 +9,7 @@ import androidx.lifecycle.viewModelScope
 import com.miraglio.data.camera.CameraService
 import com.miraglio.data.camera.LatestBitmapAnalyzer
 import com.miraglio.data.focal.FocalCalibrationStore
+import com.miraglio.domain.format.ItalianFormat
 import com.miraglio.ui.capture.LineOrientation
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -186,7 +187,7 @@ class FocalCaptureViewModel @Inject constructor(
         }
         val factor = if (focal != null && focalMain != null && focalMain > 0f) focal / focalMain else 1f
         val factorLabel = when {
-            factor < 0.95f || factor > 1.05f -> " \u2248${"%.1f".format(factor)}\u00d7"
+            factor < 0.95f || factor > 1.05f -> " \u2248${ItalianFormat.number(factor, 1)}\u00d7"
             else -> ""
         }
         _lensLabel.value = "Lente ${idx + 1}/${ids.size}$factorLabel"
@@ -343,7 +344,8 @@ class FocalCaptureViewModel @Inject constructor(
         _uiState.value = s.copy(
             distanceInput = "",
             savedCount = s.savedCount + 1,
-            statusMessage = "Punto salvato: ${distance} m · ${pixels.toInt()} px · f\u2248${point.impliedFocalPx.toInt()} px"
+            statusMessage = "Punto salvato: ${ItalianFormat.meters(distance)} · " +
+                "${pixels.toInt()} px · f\u2248${point.impliedFocalPx.toInt()} px"
         )
         return true
     }

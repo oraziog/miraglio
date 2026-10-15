@@ -10,13 +10,21 @@ import android.net.Uri
  */
 object ShareIntents {
 
-    /** Condivide solo testo (misura + link). */
-    fun shareText(context: Context, text: String) {
+    /**
+     * Condivide solo testo (misura + link, o l'invito a installare l'app).
+     * Il titolo del chooser si puo' cambiare: e' l'unica cosa che distingue
+     * una condivisione da un'altra.
+     */
+    fun shareText(
+        context: Context,
+        text: String,
+        chooserTitle: String = "Condividi luogo"
+    ) {
         val intent = Intent(Intent.ACTION_SEND).apply {
             type = "text/plain"
             putExtra(Intent.EXTRA_TEXT, text)
         }
-        context.startActivity(Intent.createChooser(intent, "Condividi luogo"))
+        context.startActivity(Intent.createChooser(intent, chooserTitle))
     }
 
     /**

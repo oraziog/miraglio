@@ -17,10 +17,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
+import com.miraglio.domain.format.ItalianFormat
 import java.io.File
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -131,9 +129,11 @@ class PlacesRepository @Inject constructor(
         _places.value = updated
     }
 
-    /** Etichetta predefinita: data/ora leggibile dello scatto. */
-    fun defaultLabel(createdAtMs: Long): String =
-        SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault()).format(Date(createdAtMs))
+    /**
+     * Etichetta predefinita: data/ora leggibile dello scatto, in formato
+     * italiano gg/mm/aaaa e ora di Roma, indipendente dal telefono.
+     */
+    fun defaultLabel(createdAtMs: Long): String = ItalianFormat.dateTime(createdAtMs)
 
     // ------------------------------------------------------------------
     // Serializzazione

@@ -1,4 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="ic_launcher_background">#3E2723</color>
+    <!--
+      Sfondo dell'icona adattiva: la media del bordo della foto
+      (drawable-nodpi/ic_launcher_image.png), che lo copre interamente. Non
+      si vede quasi mai: resta solo nei pixel che alcuni launcher muovono col
+      parallasse, e allora deve essere dello stesso tono della foto, altrimenti
+      spunta un filo di un altro colore ai bordi. Non e' piu' il marrone del
+      vecchio vettoriale, che l'icona nuova ha rimpiazzato.
+    -->
+    <color name="ic_launcher_background">#133840</color>
 </resources>

@@ -30,20 +30,34 @@ jobs:
           java-version: "17"
           cache: gradle
 
-      # La chiave di firma deve essere la stessa con cui e' installata l'app
-      # sul telefono: Android rifiuta un aggiornamento firmato da altri. Qui
-      # si rimette al suo posto la chiave di debug della macchina di sviluppo,
-      # presa dai segreti del repository (mai nel codice).
+      # La chiave di firma e' l'identita' dell'app: deve essere sempre la
+      # stessa, perche' Android rifiuta un aggiornamento firmato con una chiave
+      # diversa (andrebbe disinstallata l'app, perdendo luoghi e foto). Sta nei
+      # segreti del repository, mai nel codice: KEYSTORE_B64 e' il file .jks in
+      # base64, gli altri tre sono alias e password. Se ne manca uno il
+      # workflow si ferma prima di compilare.
       - name: Chiave di firma
         env:
           KEYSTORE_B64: ${{ secrets.KEYSTORE_B64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
-          if [ -z "$KEYSTORE_B64" ]; then
-            echo "::error::Manca il segreto KEYSTORE_B64: senza, l'APK sarebbe firmato con una chiave diversa da quella dell'app installata e l'aggiornamento verrebbe rifiutato."
-            exit 1
-          fi
-          mkdir -p "$HOME/.android"
-          printf '%s' "$KEYSTORE_B64" | base64 --decode > "$HOME/.android/debug.keystore"
+          for nome in KEYSTORE_B64 KEYSTORE_PASSWORD KEY_ALIAS KEY_PASSWORD; do
+            if [ -z "${!nome}" ]; then
+              echo "::error::Manca il segreto $nome: senza la chiave completa la release uscirebbe non firmata, e nessun telefono la installerebbe come aggiornamento."
+              exit 1
+            fi
+          done
+          printf '%s' "$KEYSTORE_B64" | base64 --decode > "$RUNNER_TEMP/miraglio-release.jks"
+          # Le variabili lette da app/build.gradle.kts, senza keystore.properties
+          # (che sul runner non esiste: e' in .gitignore).
+          {
+            echo "KEYSTORE_PATH=$RUNNER_TEMP/miraglio-release.jks"
+            echo "KEYSTORE_PASSWORD=$KEYSTORE_PASSWORD"
+            echo "KEY_ALIAS=$KEY_ALIAS"
+            echo "KEY_PASSWORD=$KEY_PASSWORD"
+          } >> "$GITHUB_ENV"
 
       - name: Tag e versione devono coincidere
         run: |
@@ -61,12 +75,32 @@ jobs:
       - name: APK di release
         run: ./gradlew --no-daemon assembleRelease
 
+      # Rete di sicurezza: un APK non firmato, o firmato con un'altra chiave,
+      # non si installerebbe sopra Miraglio e farebbe fallire l'aggiornamento su
+      # tutti i telefoni. Meglio fermarsi qui che pubblicarlo.
+      - name: Controllo della firma
+        run: |
+          set -o pipefail
+          APK=app/build/outputs/apk/release/app-release.apk
+          APKSIGNER=$(ls "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -1)
+          "$APKSIGNER" verify --print-certs "$APK" | tee firma.txt
+          ATTESA="ce7eaa63429c09728693cde142b9f89891cbed91a6e643a67c1b69ec34250f73"
+          if ! grep -qi "$ATTESA" firma.txt; then
+            echo "::error::L'APK non e' firmato con la chiave di rilascio di Miraglio: i telefoni non lo accetterebbero come aggiornamento. Se hai rigenerato la chiave, aggiorna l'impronta in .github/workflows/release.yml e i segreti del repository."
+            exit 1
+          fi
+
       - name: Pubblica la release
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.ref_name }}
         run: |
           cp app/build/outputs/apk/release/app-release.apk "miraglio-${TAG#v}.apk"
+          # Il corpo della release e' la guida di installazione (INSTALLAZIONE.md),
+          # poi GitHub ci appende il changelog generato: chi apre il link della
+          # release deve trovare come installarla, non solo l'elenco dei commit.
+          # Unica fonte delle istruzioni: si aggiorna solo INSTALLAZIONE.md.
           gh release create "$TAG" "miraglio-${TAG#v}.apk" \
             --title "Miraglio ${TAG#v}" \
+            --notes-file INSTALLAZIONE.md \
             --generate-notes

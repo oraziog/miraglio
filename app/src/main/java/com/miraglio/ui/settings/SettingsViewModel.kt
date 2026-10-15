@@ -48,6 +48,13 @@ class SettingsViewModel @Inject constructor(
     /** Versione attualmente installata, per il confronto a colpo d'occhio. */
     val installedVersionName: String = updates.installedVersionName
 
+    /**
+     * Link e messaggio per far installare Miraglio su un altro telefono: la
+     * card con QR e condivisione usa questi, senza sapere niente del repository.
+     */
+    val installPageUrl: String = updates.installPageUrl
+    val installInviteMessage: String = updates.installInviteMessage
+
     fun checkForUpdates() = updates.checkNow()
 
     fun downloadUpdate() = updates.download()

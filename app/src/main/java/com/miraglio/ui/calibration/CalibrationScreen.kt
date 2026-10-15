@@ -34,6 +34,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.miraglio.data.focal.FocalPoint
+import com.miraglio.domain.format.ItalianFormat
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -136,10 +137,10 @@ private fun FocalCalibrationCard(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            text = "${p.distanceM} m · ${p.pixels.toInt()} px · " +
+                            text = "${ItalianFormat.meters(p.distanceM)} · ${p.pixels.toInt()} px · " +
                                 "${(p.knownSizeM * 100).toInt()} cm · " +
                                 (if (p.axis == "H") "orizz" else "vert") +
-                                (if (p.zoom != 1f) " · ${"%.1f".format(p.zoom)}x" else "") +
+                                (if (p.zoom != 1f) " · ${ItalianFormat.number(p.zoom, 1)}x" else "") +
                                 " · f≈${p.impliedFocalPx.toInt()} px",
                             style = MaterialTheme.typography.bodySmall,
                             modifier = Modifier.weight(1f)

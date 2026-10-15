@@ -53,6 +53,8 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.compose.material3.ExperimentalMaterial3Api
 import com.miraglio.data.places.PlaceKind
 import com.miraglio.data.share.QrCodeRenderer
+import com.miraglio.domain.format.ItalianFormat
+import com.miraglio.domain.location.GpsFix
 import com.miraglio.domain.share.ShareMessageComposer
 import com.miraglio.ui.theme.OnPanel
 import com.miraglio.ui.theme.PanelContainer
@@ -173,52 +175,43 @@ fun PlaceDetailScreen(
                     verticalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
                     record.distanceM?.let {
-                        DetailRow("Distanza", String.format(Locale.US, "%.1f m", it))
+                        DetailRow("Distanza", ItalianFormat.meters(it))
                     }
                     record.horizontalDistanceM?.let {
-                        DetailRow("Orizzontale", String.format(Locale.US, "%.1f m", it))
+                        DetailRow("Orizzontale", ItalianFormat.meters(it))
                     }
                     record.walkedM?.let {
-                        DetailRow("Percorso a piedi", String.format(Locale.US, "%.1f m", it))
+                        DetailRow("Percorso a piedi", ItalianFormat.meters(it))
                     }
                     record.gpsErrorM?.let {
-                        DetailRow("Errore stimato", String.format(Locale.US, "±%.1f m", it))
+                        DetailRow("Errore stimato", "±${ItalianFormat.meters(it)}")
                     }
                     record.measuredSizeM?.let {
-                        DetailRow("Bersaglio", String.format(Locale.US, "%.2f m", it))
+                        DetailRow("Bersaglio", ItalianFormat.meters(it, 2))
                     }
                     record.bearingDeg?.let {
                         DetailRow(
                             "Direzione",
-                            "${ShareMessageComposer.compassLabel(it)} (${String.format(Locale.US, "%.0f°", it)})"
+                            "${ShareMessageComposer.compassLabel(it)} " +
+                                "(${ItalianFormat.number(it, 0)}°)"
                         )
                     }
                     record.pitchDeg?.let {
-                        DetailRow("Inclinazione", String.format(Locale.US, "%.1f°", it))
+                        DetailRow("Inclinazione", "${ItalianFormat.number(it, 1)}°")
                     }
+                    // Le coordinate restano col punto decimale: sono dati da
+                    // incollare in mappe e altre app, non valori da leggere.
                     record.targetFix?.let {
-                        DetailRow(
-                            "Bersaglio",
-                            String.format(Locale.US, "%.6f, %.6f (±%.0f m)", it.latitudeDeg, it.longitudeDeg, it.accuracyM)
-                        )
+                        DetailRow("Bersaglio", coordinateRow(it))
                     }
                     record.startFix?.let {
-                        DetailRow(
-                            "Partenza",
-                            String.format(Locale.US, "%.6f, %.6f (±%.0f m)", it.latitudeDeg, it.longitudeDeg, it.accuracyM)
-                        )
+                        DetailRow("Partenza", coordinateRow(it))
                     }
                     record.endFix?.let {
-                        DetailRow(
-                            "Arrivo",
-                            String.format(Locale.US, "%.6f, %.6f (±%.0f m)", it.latitudeDeg, it.longitudeDeg, it.accuracyM)
-                        )
+                        DetailRow("Arrivo", coordinateRow(it))
                     }
                     record.shotFix?.let {
-                        DetailRow(
-                            "Scatto",
-                            String.format(Locale.US, "%.6f, %.6f (±%.0f m)", it.latitudeDeg, it.longitudeDeg, it.accuracyM)
-                        )
+                        DetailRow("Scatto", coordinateRow(it))
                     }
                     record.lensLabel?.let { DetailRow("Lente", it) }
                 }
@@ -332,6 +325,14 @@ fun PlaceDetailScreen(
         )
     }
 }
+
+/**
+ * Riga di coordinate: numeri col punto decimale (si incollano in mappe e in
+ * altre app) e accuratezza con la virgola, come tutto il resto del display.
+ */
+private fun coordinateRow(fix: GpsFix): String =
+    String.format(Locale.US, "%.6f, %.6f", fix.latitudeDeg, fix.longitudeDeg) +
+        " (±${ItalianFormat.number(fix.accuracyM, 0)} m)"
 
 @Composable
 private fun DetailRow(label: String, value: String) {

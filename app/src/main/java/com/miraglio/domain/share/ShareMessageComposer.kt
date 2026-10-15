@@ -1,5 +1,6 @@
 package com.miraglio.domain.share
 
+import com.miraglio.domain.format.ItalianFormat
 import com.miraglio.domain.location.GpsFix
 import java.util.Locale
 import kotlin.math.abs
@@ -37,22 +38,25 @@ object ShareMessageComposer {
         target: GpsFix? = null
     ): String = buildString {
         appendLine("📍 Luogo salvato con Miraglio")
-        appendLine(String.format(Locale.US, "Distanza: %.1f m (orizzontale %.1f m)", distanceM, horizontalDistanceM))
+        appendLine(
+            "Distanza: ${ItalianFormat.meters(distanceM)} " +
+                "(orizzontale ${ItalianFormat.meters(horizontalDistanceM)})"
+        )
         measuredSizeM?.let {
-            appendLine(String.format(Locale.US, "Dimensione bersaglio: %.2f m", it))
+            appendLine("Dimensione bersaglio: ${ItalianFormat.meters(it, 2)}")
         }
-        appendLine(String.format(Locale.US, "Direzione: %s (%.0f°)", compassLabel(bearingDeg), bearingDeg))
-        appendLine(String.format(Locale.US, "Inclinazione: %.1f°", pitchDeg))
+        appendLine("Direzione: ${compassLabel(bearingDeg)} (${ItalianFormat.number(bearingDeg, 0)}°)")
+        appendLine("Inclinazione: ${ItalianFormat.number(pitchDeg, 1)}°")
         appendLine()
         if (fix != null) {
-            appendLine(String.format(Locale.US, "Da qui: %.6f, %.6f (±%.0f m)", fix.latitudeDeg, fix.longitudeDeg, fix.accuracyM))
+            appendLine("Da qui: ${coordinates(fix)}")
             appendLine(mapsLink(fix))
         } else {
             appendLine("Posizione GPS non disponibile al momento dello scatto")
         }
         if (target != null) {
             appendLine()
-            appendLine(String.format(Locale.US, "🎯 Bersaglio (stimato): %.6f, %.6f (±%.0f m)", target.latitudeDeg, target.longitudeDeg, target.accuracyM))
+            appendLine("🎯 Bersaglio (stimato): ${coordinates(target)}")
             appendLine(mapsLink(target))
         }
     }
@@ -75,14 +79,10 @@ object ShareMessageComposer {
         appendLine("📏 Misura GPS salvata con Miraglio")
         appendLine(
             if (distanceErrorM != null && distanceErrorM > 0f) {
-                String.format(
-                    Locale.US,
-                    "Distanza: %.1f m (errore stimato ±%.1f m)",
-                    distanceM,
-                    distanceErrorM
-                )
+                "Distanza: ${ItalianFormat.meters(distanceM)} " +
+                    "(errore stimato ±${ItalianFormat.meters(distanceErrorM)})"
             } else {
-                String.format(Locale.US, "Distanza: %.1f m", distanceM)
+                "Distanza: ${ItalianFormat.meters(distanceM)}"
             }
         )
         if (distanceErrorM != null && distanceErrorM > PRECISION_WARNING_METERS) {
@@ -91,26 +91,27 @@ object ShareMessageComposer {
             )
         }
         appendLine()
-        appendLine(
-            String.format(
-                Locale.US,
-                "Arrivo: %.6f, %.6f (±%.0f m)",
-                end.latitudeDeg, end.longitudeDeg, end.accuracyM
-            )
-        )
+        appendLine("Arrivo: ${coordinates(end)}")
         appendLine(mapsLink(end))
         if (start != null) {
             appendLine()
-            appendLine(
-                String.format(
-                    Locale.US,
-                    "Partenza: %.6f, %.6f (±%.0f m)",
-                    start.latitudeDeg, start.longitudeDeg, start.accuracyM
-                )
-            )
+            appendLine("Partenza: ${coordinates(start)}")
             appendLine(mapsLink(start))
         }
     }
+
+    /**
+     * Coordinate pronte da incollare: punto decimale (non virgola, che
+     * spezzerebbe l'indirizzo) e accuratezza con la virgola come a schermo.
+     */
+    private fun coordinates(fix: GpsFix): String =
+        String.format(
+            Locale.US,
+            "%.6f, %.6f (±%s m)",
+            fix.latitudeDeg,
+            fix.longitudeDeg,
+            ItalianFormat.number(fix.accuracyM, 0)
+        )
 
     /** Etichetta breve della direzione (8 settori). */
     fun compassLabel(bearingDeg: Float): String {
@@ -121,5 +122,9 @@ object ShareMessageComposer {
 
     /** Formattazione compatta dell'accuratezza (senza decimali se >= 10 m). */
     fun accuracyLabel(accuracyM: Float): String =
-        if (abs(accuracyM) >= 10f) "±${accuracyM.toInt()} m" else String.format(Locale.US, "±%.1f m", accuracyM)
+        if (abs(accuracyM) >= 10f) {
+            "±${ItalianFormat.number(accuracyM, 0)} m"
+        } else {
+            "±${ItalianFormat.meters(accuracyM)}"
+        }
 }

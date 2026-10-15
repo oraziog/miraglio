@@ -1,6 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  Icona adattiva: il foreground e' la foto dell'icona (bersaglio + freccia),
+  che riempie tutto il canvas 108dp: il launcher la ritaglia nella sua forma
+  (cerchio, squircle, riquadro) e non si vedono giunture, perche' ogni
+  sfondo che resta ai bordi e' gia' dentro la foto. Lo sfondo colorato sta
+  dietro, non si vede se non nei pochi pixel spostati dal parallasse di
+  alcuni launcher: il colore e' la media del bordo della foto.
+  Il monochrome e' un vettore separato, perche' solo quello puo' essere
+  ritinto dai launcher con le icone a tema.
+-->
 <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
     <background android:drawable="@color/ic_launcher_background" />
-    <foreground android:drawable="@drawable/ic_launcher_foreground" />
-    <monochrome android:drawable="@drawable/ic_launcher_foreground" />
+    <foreground android:drawable="@drawable/ic_launcher_image" />
+    <monochrome android:drawable="@drawable/ic_launcher_monochrome" />
 </adaptive-icon>

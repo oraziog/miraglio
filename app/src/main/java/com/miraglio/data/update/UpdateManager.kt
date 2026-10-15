@@ -2,6 +2,7 @@ package com.miraglio.data.update
 
 import com.miraglio.BuildConfig
 import com.miraglio.domain.update.AppVersion
+import com.miraglio.domain.update.InstallInvite
 import com.miraglio.domain.update.ReleaseInfo
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -80,6 +81,14 @@ class UpdateManager @Inject constructor(
     private var postponedTag: String? = null
 
     val installedVersionName: String = BuildConfig.VERSION_NAME
+
+    /**
+     * Link e messaggio per far installare Miraglio su un altro telefono
+     * (card in Impostazioni: QR + condivisione). Il repository e' lo stesso da
+     * cui l'app legge gli aggiornamenti, quindi si cambia in un posto solo.
+     */
+    val installPageUrl: String = InstallInvite.releasePageUrl(BuildConfig.UPDATE_REPO)
+    val installInviteMessage: String = InstallInvite.message(BuildConfig.UPDATE_REPO)
 
     /**
      * Controllo silenzioso all'avvio: se c'e' una versione nuova apre il

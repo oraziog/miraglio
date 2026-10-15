@@ -1,19 +1,25 @@
 package com.miraglio.ui.settings
 
+import android.graphics.Bitmap
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.toggleable
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -22,20 +28,32 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.contentColorFor
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.miraglio.data.share.QrCodeRenderer
 import com.miraglio.data.update.UpdateManager
+import com.miraglio.ui.places.QrShareHelper
+import com.miraglio.ui.places.ShareIntents
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -99,8 +117,139 @@ fun SettingsScreen(
                 onCancelDownload = viewModel::cancelDownload,
                 onInstall = viewModel::installUpdate
             )
+            InstallCard(
+                pageUrl = viewModel.installPageUrl,
+                message = viewModel.installInviteMessage
+            )
         }
     }
+}
+
+/**
+ * Invito per un altro arciere: link e QR della release piu' recente, da far
+ * inquadrare con il telefono di chi deve installarla. Serve anche a se stessi,
+ * quando si cambia telefono.
+ */
+@Composable
+private fun InstallCard(
+    pageUrl: String,
+    message: String
+) {
+    val containerColor = MaterialTheme.colorScheme.surfaceVariant
+    var showInvite by remember { mutableStateOf(false) }
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = containerColor)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Text(
+                text = "Installa su un altro telefono",
+                fontWeight = FontWeight.Bold,
+                style = MaterialTheme.typography.titleMedium
+            )
+            Text(
+                text = "Mostra il QR e il link della release: l'altro arciere li " +
+                    "apre dal suo telefono e installa Miraglio. Utile anche per te, " +
+                    "se cambi telefono.",
+                style = MaterialTheme.typography.bodySmall,
+                color = contentColorFor(containerColor).copy(alpha = 0.8f)
+            )
+            Button(onClick = { showInvite = true }) {
+                Text("Mostra QR e link")
+            }
+        }
+    }
+
+    if (showInvite) {
+        InstallDialog(
+            pageUrl = pageUrl,
+            message = message,
+            onDismiss = { showInvite = false }
+        )
+    }
+}
+
+/**
+ * QR del link, link in chiaro e le due condivisioni: il messaggio per chi e'
+ * lontano, il QR come immagine per chi e' li'.
+ */
+@Composable
+private fun InstallDialog(
+    pageUrl: String,
+    message: String,
+    onDismiss: () -> Unit
+) {
+    val context = LocalContext.current
+    var qrBitmap by remember { mutableStateOf<Bitmap?>(null) }
+
+    // Il QR si disegna fuori dal thread della UI: e' una griglia di quadrati
+    // da 512 px, non un disegno da tenere nel disegno del frame.
+    LaunchedEffect(pageUrl) {
+        qrBitmap = withContext(Dispatchers.Default) {
+            runCatching { QrCodeRenderer.render(pageUrl, 512) }.getOrNull()
+        }
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text("Installa su un altro telefono", fontWeight = FontWeight.Bold)
+        },
+        text = {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                val bmp = qrBitmap
+                if (bmp != null) {
+                    Image(
+                        bitmap = bmp.asImageBitmap(),
+                        contentDescription = "QR della release piu' recente",
+                        modifier = Modifier.size(240.dp)
+                    )
+                } else {
+                    CircularProgressIndicator(modifier = Modifier.size(48.dp))
+                }
+                Text(
+                    text = "Inquadralo con il telefono dell'altro arciere: si " +
+                        "apre la pagina della release, con le istruzioni e l'APK.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.padding(top = 12.dp)
+                )
+                // Il link resta anche scritto, e copiabile: c'e' chi preferisce
+                // mandarlo per messaggio invece di far inquadrare uno schermo.
+                SelectionContainer {
+                    Text(
+                        text = pageUrl,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.padding(top = 8.dp)
+                    )
+                }
+                if (bmp != null) {
+                    TextButton(onClick = { QrShareHelper.shareQr(context, bmp) }) {
+                        Text("Condividi il QR come immagine")
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { ShareIntents.shareText(context, message, "Condividi invito") }
+            ) {
+                Text("Condividi")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Chiudi") }
+        }
+    )
 }
 
 /**

@@ -1,6 +1,7 @@
 package com.miraglio.ui.measurement
 
 import android.location.Location
+import android.os.SystemClock
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -10,8 +11,11 @@ import com.miraglio.data.places.PlaceRecord
 import com.miraglio.data.places.PlaceSaveState
 import com.miraglio.data.places.PlacesRepository
 import com.miraglio.data.session.ShotVerificationStore
+import com.miraglio.domain.format.ItalianFormat
 import com.miraglio.domain.location.GpsFix
 import com.miraglio.domain.location.Haversine
+import com.miraglio.domain.location.MeasurementRules
+import com.miraglio.domain.location.WalkFix
 import com.miraglio.domain.share.ShareMessageComposer
 import com.miraglio.power.BackgroundPowerController
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -40,11 +44,21 @@ data class MeasurementUiState(
      */
     val finalErrorM: Float? = null,
     val fixAccuracyM: Float? = null,
-    /** Provider del fix corrente ("gps", "network", ...): l'accuratezza
-     *  dipende dall'origine, e va mostrata per capire ±20 m. */
+    /** Provider del fix usato ("gps"): l'accuratezza dipende dall'origine. */
     val fixProvider: String? = null,
+    /**
+     * Vero se l'ultimo fix satellitare e' di adesso e abbastanza preciso da
+     * misurare: sotto, il numero mostrato e' vecchio o inaffidabile e la
+     * misura non si puo' chiudere.
+     */
+    val fixUsable: Boolean = false,
+    /** Vero se il fix corrente basta anche a bloccare la partenza. */
+    val fixReadyForStart: Boolean = false,
+    /** In attesa del fix di partenza: nessuna partenza bloccata finora. */
     val waitingForFix: Boolean = false,
     val gpsEnabled: Boolean = true,
+    /** "FINO A QUI" si abilita solo con partenza bloccata e fix di adesso. */
+    val canFinish: Boolean = false,
     val estimatedDistanceM: Float? = null,
     val message: String? = null,
     /**
@@ -70,7 +84,16 @@ class MeasurementViewModel @Inject constructor(
     private val _phase = MutableStateFlow(MeasurementPhase.IDLE)
     private val _start = MutableStateFlow<Location?>(null)
     private val _current = MutableStateFlow<Location?>(null)
-    private val _previous = MutableStateFlow<Location?>(null)
+    /** Ultimo fix usato per la misura: serve a sommare i passi e come arrivo. */
+    private val _previous = MutableStateFlow<WalkFix?>(null)
+    /** Ultimo fix del satellite ricevuto, anche se non utilizzabile. */
+    private val _lastGnss = MutableStateFlow<Location?>(null)
+    /** Partenza candidata: il fix successivo la conferma o la sostituisce. */
+    private val _candidate = MutableStateFlow<WalkFix?>(null)
+    /** Contatore che sveglia il ricalcolo dello stato (freschezza dei fix). */
+    private val _tick = MutableStateFlow(0L)
+    /** Istante in cui e' stata armata la misura: oltre START_GIVE_UP_MS si parte comunque. */
+    private var armedAtMs = 0L
     private val _walked = MutableStateFlow(0f)
     private val _waitingForFix = MutableStateFlow(false)
     private val _gpsEnabled = MutableStateFlow(true)
@@ -89,10 +112,13 @@ class MeasurementViewModel @Inject constructor(
         val phase: MeasurementPhase,
         val start: Location?,
         val current: Location?,
+        val lastGnss: Location?,
         val walked: Float,
         val waitingForFix: Boolean,
         val gpsEnabled: Boolean
     )
+
+    private fun nowElapsedMs(): Long = SystemClock.elapsedRealtime()
 
     private fun distanceBetween(a: Location, b: Location): Float =
         Haversine.distanceMeters(a.latitude, a.longitude, b.latitude, b.longitude).toFloat()
@@ -108,8 +134,14 @@ class MeasurementViewModel @Inject constructor(
         return kotlin.math.sqrt(a * a + b * b)
     }
 
-    private val positions = combine(_start, _current) { start, current ->
-        start to current
+    private data class Trio(
+        val start: Location?,
+        val current: Location?,
+        val lastGnss: Location?
+    )
+
+    private val positions = combine(_start, _current, _lastGnss) { start, current, last ->
+        Trio(start, current, last)
     }
 
     private val localState: StateFlow<LocalState> = combine(
@@ -119,11 +151,20 @@ class MeasurementViewModel @Inject constructor(
         _waitingForFix,
         _gpsEnabled
     ) { positions, phase, walked, waiting, gpsEnabled ->
-        LocalState(phase, positions.first, positions.second, walked, waiting, gpsEnabled)
+        LocalState(
+            phase,
+            positions.start,
+            positions.current,
+            positions.lastGnss,
+            walked,
+            waiting,
+            gpsEnabled
+        )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), LocalState(
         phase = MeasurementPhase.IDLE,
         start = null,
         current = null,
+        lastGnss = null,
         walked = 0f,
         waitingForFix = false,
         gpsEnabled = true
@@ -132,8 +173,17 @@ class MeasurementViewModel @Inject constructor(
     val uiState: StateFlow<MeasurementUiState> = combine(
         localState,
         store.estimatedDistanceM,
-        _finishWarning
-    ) { local, estimated, finishWarning ->
+        _finishWarning,
+        _tick
+    ) { local, estimated, finishWarning, _ ->
+        // Freschezza e qualita' del fix si valutano adesso, a ogni ricalcolo:
+        // un fix di dieci secondi fa non e' piu' "di adesso".
+        val now = nowElapsedMs()
+        val lastGnss = local.lastGnss?.let { WalkFix.from(it) }
+        val fixUsable = lastGnss != null &&
+            MeasurementRules.isUsable(lastGnss, now, MeasurementRules.TRACK_MAX_ACCURACY_M)
+        val fixReadyForStart = lastGnss != null &&
+            MeasurementRules.isUsable(lastGnss, now, MeasurementRules.START_MAX_ACCURACY_M)
         val liveDistance = if (local.phase != MeasurementPhase.IDLE &&
             local.start != null && local.current != null
         ) {
@@ -169,10 +219,14 @@ class MeasurementViewModel @Inject constructor(
             walkedDistanceM = local.walked,
             finalDistanceM = finalDistance,
             finalErrorM = finalError,
-            fixAccuracyM = local.current?.accuracy,
-            fixProvider = local.current?.provider,
+            fixAccuracyM = local.lastGnss?.accuracy,
+            fixProvider = local.lastGnss?.provider,
+            fixUsable = fixUsable,
+            fixReadyForStart = fixReadyForStart,
             waitingForFix = local.waitingForFix,
             gpsEnabled = local.gpsEnabled,
+            canFinish = local.phase == MeasurementPhase.TRACKING &&
+                local.start != null && fixUsable,
             estimatedDistanceM = estimated,
             message = _message.value,
             finishWarningErrorM = finishWarning,
@@ -206,35 +260,98 @@ class MeasurementViewModel @Inject constructor(
             }
         }
 
+        // Si ascolta il solo provider satellitare: un fix di rete "sembra"
+        // accurato ma puo' stare decine di metri piu' in la', e come partenza
+        // inventerebbe metri.
         viewModelScope.launch {
-            tracker.currentLocation.collect { location ->
+            tracker.gnssLocation.collect { location ->
                 if (location == null) return@collect
-                _current.value = location
-
-                if (_phase.value == MeasurementPhase.TRACKING) {
-                    val start = _start.value
-                    if (start == null) {
-                        _start.value = location
-                        _previous.value = location
-                        _waitingForFix.value = false
-                        _message.value = null
-                    } else {
-                        val previous = _previous.value
-                        if (previous != null) {
-                            val step = distanceBetween(previous, location)
-                            if (step in MIN_STEP_METERS..MAX_STEP_METERS) {
-                                _walked.value += step
-                            }
-                        }
-                        _previous.value = location
-                    }
-                }
+                _lastGnss.value = location
+                if (_phase.value != MeasurementPhase.TRACKING) return@collect
+                onGnssFix(location)
             }
         }
     }
 
+    /**
+     * Un fix satellitare nuovo durante una misura: o blocca la partenza, o
+     * somma il passo percorso e aggiorna l'arrivo provvisorio.
+     */
+    private fun onGnssFix(location: Location) {
+        val now = nowElapsedMs()
+        val fix = WalkFix.from(location)
+
+        if (_start.value == null) {
+            when {
+                // Fix buono: il successivo lo conferma. Il primo fix dopo
+                // l'aggancio puo' essere un valore isolato a decine di metri e
+                // come partenza sarebbe una bugia.
+                MeasurementRules.isUsable(fix, now, MeasurementRules.START_MAX_ACCURACY_M) -> {
+                    val candidate = _candidate.value
+                    if (candidate != null &&
+                        MeasurementRules.distanceM(candidate, fix) <=
+                        MeasurementRules.START_CONFIRM_DISTANCE_M
+                    ) {
+                        lockStart(location, warning = null)
+                    } else {
+                        _candidate.value = fix
+                    }
+                }
+                // Nessun fix buono dopo il tempo di grazia: si parte con
+                // quello che c'e', dichiarando l'accuratezza reale.
+                now - armedAtMs >= MeasurementRules.START_GIVE_UP_MS &&
+                    MeasurementRules.isUsable(fix, now, MeasurementRules.TRACK_MAX_ACCURACY_M) -> {
+                    lockStart(
+                        location,
+                        warning = "Partenza con precisione ridotta: " +
+                            "±${ItalianFormat.meters(fix.accuracyM)}"
+                    )
+                }
+                else -> _candidate.value = null
+            }
+            return
+        }
+
+        // Partenza bloccata: un fix scadente non entra nella misura (ne' nei
+        // passi, ne' come arrivo), ma resta visibile come precisione in corso.
+        if (!MeasurementRules.isUsable(fix, now, MeasurementRules.TRACK_MAX_ACCURACY_M)) return
+        _previous.value?.let { previous ->
+            MeasurementRules.stepMeters(previous, fix)?.let { step -> _walked.value += step }
+        }
+        _previous.value = fix
+        _current.value = location
+    }
+
+    private fun lockStart(location: Location, warning: String?) {
+        _start.value = location
+        _current.value = location
+        _previous.value = WalkFix.from(location)
+        _candidate.value = null
+        _waitingForFix.value = false
+        _message.value = warning
+    }
+
     fun refreshGpsStatus() {
         _gpsEnabled.value = tracker.isGpsEnabled()
+        // Sveglia il ricalcolo: senza, lo stato resterebbe convinto che il fix
+        // sia ancora fresco anche se il GPS ha smesso di aggiornarlo.
+        _tick.value++
+    }
+
+    /**
+     * Cancella dall'handle ogni traccia della misura: serve all'inizio e alla
+     * fine di ognuna, altrimenti una morte del processo durante la misura
+     * nuova ripristinerebbe partenza e percorso di quella precedente.
+     */
+    private fun clearPersistedMeasurement() {
+        savedStateHandle[KEY_ACTIVE] = false
+        savedStateHandle[KEY_PHASE] = MeasurementPhase.IDLE.ordinal
+        savedStateHandle[KEY_WALKED] = 0f
+        listOf(
+            KEY_START_LAT, KEY_START_LON, KEY_START_ACC, KEY_START_TIME, KEY_START_BEARING,
+            KEY_CURRENT_LAT, KEY_CURRENT_LON, KEY_CURRENT_ACC, KEY_CURRENT_TIME,
+            KEY_CURRENT_BEARING
+        ).forEach { savedStateHandle.remove<Any>(it) }
     }
 
     // ------------------------------------------------------------------
@@ -304,14 +421,24 @@ class MeasurementViewModel @Inject constructor(
             savedStateHandle[KEY_ACTIVE] = false
             return
         }
-        _phase.value = phase
-        _walked.value = savedStateHandle.get<Float>(KEY_WALKED) ?: 0f
         val startFix = readFixFields(isStart = true)
         val currentFix = readFixFields(isStart = false)
+        // Una misura ripresa dopo troppo tempo non e' piu' quella misura: la
+        // partenza apparteneva a un altro momento e a un altro punto. Si torna
+        // a IDLE, non si arma niente con quella partenza.
+        val startAgeMs = startFix?.let { System.currentTimeMillis() - it.timeMs }
+        if (startAgeMs != null && startAgeMs > RESTORE_MAX_AGE_MS) {
+            clearPersistedMeasurement()
+            return
+        }
+        _phase.value = phase
+        _walked.value = savedStateHandle.get<Float>(KEY_WALKED) ?: 0f
+        _candidate.value = null
+        armedAtMs = nowElapsedMs()
         _start.value = startFix?.let { locationFrom(it) }
         _current.value = currentFix?.let { locationFrom(it) }
         // Prossima tappa della distanza a piedi: riparte dal fix corrente.
-        _previous.value = _current.value
+        _previous.value = _current.value?.let { WalkFix.from(it) }
         _waitingForFix.value = _start.value == null
         if (phase == MeasurementPhase.TRACKING) {
             powerController.setMeasurementTracking(true)
@@ -327,17 +454,21 @@ class MeasurementViewModel @Inject constructor(
         if (_phase.value != MeasurementPhase.IDLE) return
         tracker.startLocationUpdates()
         refreshGpsStatus()
+        // Azzeramento: nessun valore della misura precedente (ne' il fix di
+        // prima salvato nell'handle) deve entrare in questa.
+        clearPersistedMeasurement()
+        _start.value = null
+        _current.value = null
+        _previous.value = null
+        _candidate.value = null
         _walked.value = 0f
         _message.value = null
-        val current = tracker.currentLocation.value
-        if (current != null) {
-            _start.value = current
-            _current.value = current
-            _previous.value = current
-            _waitingForFix.value = false
-        } else {
-            _waitingForFix.value = true
-        }
+        _finishWarning.value = null
+        _placeSaveState.value = PlaceSaveState.IDLE
+        armedAtMs = nowElapsedMs()
+        // La partenza si blocca solo con un fix di adesso: fino ad allora la
+        // distanza non si mostra (un numero vecchio sarebbe peggio di niente).
+        _waitingForFix.value = true
         _phase.value = MeasurementPhase.TRACKING
         // Finestra GPS di 10 minuti in background: tempo di arrivare a piedi
         // sul punto finale (vedi BackgroundPowerController).
@@ -347,28 +478,51 @@ class MeasurementViewModel @Inject constructor(
     fun finishMeasurement() {
         if (_phase.value != MeasurementPhase.TRACKING) return
         val start = _start.value
-        val current = _current.value
-        if (start == null || current == null) {
-            _message.value = "Fix GPS assente: attendi qualche secondo e riprova"
+        if (start == null) {
+            _message.value = "Attendi il fix di partenza: serve un fix satellitare (all'aperto)"
+            return
+        }
+        val end = validEndFix()
+        if (end == null) {
+            _message.value = "Fix GPS non aggiornato: attendi qualche secondo in cielo aperto e riprova"
             return
         }
         // Sotto la soglia si chiude subito; sopra si chiede conferma, perche'
         // il numero finale sarebbe sbagliato di oltre la soglia stessa.
-        val error = measurementErrorM(start, current)
+        val error = measurementErrorM(start, end)
         if (error > FINISH_WARN_ERROR_METERS) {
             _finishWarning.value = error
             return
         }
-        completeMeasurement(start, current)
+        completeMeasurement(start, end)
     }
 
     /** "Continua": chiude la misura nonostante l'errore stimato elevato. */
     fun confirmFinishMeasurement() {
         if (_phase.value != MeasurementPhase.TRACKING) return
         val start = _start.value ?: return
-        val current = _current.value ?: return
+        val end = validEndFix()
+        if (end == null) {
+            _finishWarning.value = null
+            _message.value = "Fix GPS non aggiornato: attendi qualche secondo in cielo aperto e riprova"
+            return
+        }
         _finishWarning.value = null
-        completeMeasurement(start, current)
+        completeMeasurement(start, end)
+    }
+
+    /**
+     * Fix con cui chiudere la misura: l'ultimo utilizzato, se e' ancora di
+     * adesso e accurato. Un fix vecchio come arrivo darebbe una distanza che
+     * non e' quella percorsa.
+     */
+    private fun validEndFix(): Location? {
+        val end = _current.value ?: return null
+        val now = nowElapsedMs()
+        if (!MeasurementRules.isUsable(WalkFix.from(end), now, MeasurementRules.TRACK_MAX_ACCURACY_M)) {
+            return null
+        }
+        return end
     }
 
     /** "Aspetta": resta in TRACKING in attesa di un fix migliore. */
@@ -379,6 +533,7 @@ class MeasurementViewModel @Inject constructor(
     private fun completeMeasurement(start: Location, end: Location) {
         val distance = distanceBetween(start, end)
         _phase.value = MeasurementPhase.DONE
+        _candidate.value = null
         _waitingForFix.value = false
         _finishWarning.value = null
         powerController.setMeasurementTracking(false)
@@ -393,11 +548,13 @@ class MeasurementViewModel @Inject constructor(
         _start.value = null
         _current.value = null
         _previous.value = null
+        _candidate.value = null
         _walked.value = 0f
         _waitingForFix.value = false
         _message.value = null
         _finishWarning.value = null
         _placeSaveState.value = PlaceSaveState.IDLE
+        clearPersistedMeasurement()
         refreshGpsStatus()
         tracker.startLocationUpdates()
     }
@@ -439,8 +596,8 @@ class MeasurementViewModel @Inject constructor(
     }
 
     companion object {
-        private const val MIN_STEP_METERS = 1f
-        private const val MAX_STEP_METERS = 100f
+        /** Oltre questa eta' una misura ripresa non e' piu' attendibile. */
+        private const val RESTORE_MAX_AGE_MS = 15L * 60_000
 
         /**
          * Oltre questo errore combinato sui due fix la distanza finale non e'

@@ -15,6 +15,13 @@ app/build/
 local.properties
 
 # ---------------------------------------------------------------------------
+# Firma di rilascio: la chiave e la sua password non entrano nel repository
+# ---------------------------------------------------------------------------
+keystore.properties
+*.jks
+*.keystore
+
+# ---------------------------------------------------------------------------
 # Stato degli strumenti / agenti di sviluppo
 # ---------------------------------------------------------------------------
 .freebuff/

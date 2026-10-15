@@ -84,6 +84,28 @@ compensato automaticamente**: puoi zoomare liberamente senza ricalibrare.
 
 ---
 
+## Come Miraglio calcola la distanza
+
+![Infografica: calcolo della distanza compensata — fisica del tiro in pendenza, CD = LoS × cos θ, regolazione del mirino](docs/img/infografica-distanza.jpg)
+
+L'infografica riassume il ragionamento in tre blocchi:
+
+- **La fisica del tiro in pendenza**: la traiettoria dipende dalla distanza
+  *orizzontale*, non da quella che guardi con gli occhi. Puntando in salita o
+  in discesa la distanza di vista (LoS) è più corta o più lunga di quella
+  reale: è l'errore che fa credere di dover correggere mirino.
+- **Il calcolo**: `CD = LoS × cos(θ)`. È esattamente quello che fa l'app:
+  la fotocamera misura la linea di vista, l'**inclinometro** del telefono dà
+  l'angolo θ e in schermata leggi il risultato come *Distanza compensata*
+  (con l'angolo accanto). Valori tipici del coseno: 10° → 0,98, 20° → 0,94,
+  30° → 0,87, cioè a 30° di pendenza la distanza grezza mente del 13%.
+- **Regolazione del mirino**: punte, distanza di innesto e compensazioni sono
+  **riferimento generale** sull'attrezzo, non una funzione dell'app: Miraglio
+  misura la distanza, il mirino lo regoli tu. Resta utile per capire perché a
+  distanza uguale i punti di mira non coincidono.
+
+---
+
 ## Aggiornamenti
 
 L'app si aggiorna da sola quando viene pubblicata una versione nuova, senza
@@ -108,6 +130,59 @@ passare dal Play Store e **senza perdere niente di quello che hai salvato**.
 Se l'installazione non parte le cause sono quasi sempre due: manca
 l'autorizzazione di cui sopra, oppure il download si è interrotto (in quel caso
 basta riprovare: l'app se ne accorge e non ti fa installare un file incompleto).
+
+---
+
+## Far installare Miraglio a un altro arciere
+
+In **Impostazioni** c'è la card **Installa su un altro telefono**:
+
+- **Mostra QR e link** apre il QR del link della release più recente. Fai
+  inquadrare il QR con il telefono dell'altro arciere: gli si apre la pagina con
+  le istruzioni di installazione e l'APK da scaricare.
+- **Condividi** manda il messaggio con dentro il link: va bene per chi è lontano
+  (WhatsApp, email...).
+- **Condividi il QR come immagine** manda il QR come foto, per farlo inquadrare
+  da un altro schermo o da un foglio stampato.
+
+Serve anche a te, quando cambi telefono.
+
+Chi installa deve fare due cose che Android chiede sempre: autorizzare
+*installa app sconosciute* e confermare l'installazione. Poi **deve calibrare**:
+la calibrazione non si copia da un telefono all'altro (vedi *La calibrazione vale
+solo sul tuo telefono*).
+
+---
+
+## Verifica distanza (GPS)
+
+Serve a misurare a piedi la distanza fra due punti e confrontarla con quella
+stimata dall'app.
+
+1. Mettiti **all'aperto** e aspetta che in basso compaia
+   *Fix GPS disponibile (±… m)*. In casa, sotto gli alberi o fra i palazzi il
+   satellite non aggancia: senza fix buono la misura non parte.
+2. Premi **MISURA**: la **partenza si blocca sul fix di quel momento** (serve un
+   fix di adesso entro ±10 m, confermato dal fix successivo). Fino ad allora
+   vedi *In attesa del fix di partenza*: è l'app che si rifiuta di partire da
+   una posizione vecchia, che sposterebbe la partenza di decine di metri.
+3. Cammina fino al punto finale. Il numero grande è la distanza **in linea
+d'aria** dalla partenza, quella sotto è il **percorso a piedi** (quanto hai
+   camminato davvero).
+4. Premi **FINO A QUI**: si chiude solo con un fix **di adesso**; se il numero
+   sotto è rosso lampeggiante il fix è vecchio o scadente e conviene aspettare.
+5. Confronta la misura con la **stima dell'app** e lo scarto (tolleranza ±3 m).
+
+Note utili:
+
+- L'**errore stimato** (±x m) accompagna sempre il risultato e finisce anche nel
+  luogo salvato e nel messaggio condiviso: la misura resta valida, ma chi la
+  legge sa di quanto può sbagliare.
+- Oltre **5 m** di errore stimato l'app chiede conferma prima di chiudere.
+- Se la misura va in background (schermo spento) il GPS resta attivo per
+  **10 minuti**: il tempo di arrivare al punto finale a piedi.
+- Se il processo viene chiuso, la misura riprende da dove era **solo se** non è
+  più vecchia di 15 minuti: oltre, partenza e percorso non valgono più.
 
 ---
 

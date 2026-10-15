@@ -54,6 +54,8 @@ import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.miraglio.data.places.PlaceSaveState
+import com.miraglio.domain.format.ItalianFormat
+import com.miraglio.domain.location.MeasurementRules
 import com.miraglio.ui.places.PlaceShareBar
 import com.miraglio.ui.places.ShareIntents
 import com.miraglio.ui.theme.LocalOutdoorMode
@@ -105,10 +107,12 @@ fun MeasurementScreen(
         }
     }
 
+    // Ogni secondo: oltre allo stato del GPS serve a far rivalutare l'eta' dei
+    // fix, cosi' un fix che smette di arrivare non resta "buono" a schermo.
     LaunchedEffect(Unit) {
         while (true) {
             viewModel.refreshGpsStatus()
-            delay(5000)
+            delay(1000)
         }
     }
 
@@ -154,9 +158,10 @@ fun MeasurementScreen(
             } else {
                 when (uiState.phase) {
                     MeasurementPhase.IDLE -> IdleContent(
-                        hasFix = uiState.fixAccuracyM != null,
-                        estimatedDistance = uiState.estimatedDistanceM,
                         gpsEnabled = uiState.gpsEnabled,
+                        fixAccuracyM = uiState.fixAccuracyM,
+                        fixReadyForStart = uiState.fixReadyForStart,
+                        estimatedDistance = uiState.estimatedDistanceM,
                         onStart = viewModel::startMeasurement
                     )
                     MeasurementPhase.TRACKING -> TrackingContent(
@@ -165,6 +170,8 @@ fun MeasurementScreen(
                         waitingForFix = uiState.waitingForFix,
                         fixAccuracy = uiState.fixAccuracyM,
                         fixProvider = uiState.fixProvider,
+                        fixUsable = uiState.fixUsable,
+                        canFinish = uiState.canFinish,
                         message = uiState.message,
                         finishWarningErrorM = uiState.finishWarningErrorM,
                         onFinish = viewModel::finishMeasurement,
@@ -236,14 +243,16 @@ private fun PermissionPrompt() {
 
 @Composable
 private fun IdleContent(
-    hasFix: Boolean,
-    estimatedDistance: Float?,
     gpsEnabled: Boolean,
+    fixAccuracyM: Float?,
+    fixReadyForStart: Boolean,
+    estimatedDistance: Float?,
     onStart: () -> Unit
 ) {
     Column(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.Center) {
         Text(
-            text = "Premi misura e spostati nel punto finale",
+            text = "Premi MISURA: la partenza si blocca sul fix del momento, " +
+                "poi spostati fino al punto finale",
             style = MaterialTheme.typography.bodyLarge,
             textAlign = TextAlign.Center,
             modifier = Modifier.fillMaxWidth()
@@ -260,8 +269,15 @@ private fun IdleContent(
         Text(
             text = when {
                 !gpsEnabled -> "GPS assente"
-                hasFix -> "Fix GPS disponibile"
-                else -> "In attesa del primo fix GPS (all'aperto)..."
+                // La partenza vuole un fix di adesso entro ±10 m: dirlo prima
+                // evita di armare la misura e restare fermi senza capire perche'.
+                fixReadyForStart ->
+                    "Fix GPS disponibile (±${ItalianFormat.meters(fixAccuracyM ?: 0f)})"
+                fixAccuracyM != null ->
+                    "Fix da migliorare: ora ±${ItalianFormat.meters(fixAccuracyM)} " +
+                        "(serve entro ±${ItalianFormat.meters(MeasurementRules.START_MAX_ACCURACY_M, 0)}), " +
+                        "all'aperto"
+                else -> "In attesa del primo fix satellitare (all'aperto)..."
             },
             style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
@@ -271,7 +287,7 @@ private fun IdleContent(
         estimatedDistance?.let {
             Spacer(modifier = Modifier.height(16.dp))
             Text(
-                text = "Stima ultima distanza: $it m",
+                text = "Stima ultima distanza: ${ItalianFormat.meters(it, 2)}",
                 style = MaterialTheme.typography.labelLarge,
                 textAlign = TextAlign.Center,
                 modifier = Modifier.fillMaxWidth()
@@ -287,6 +303,8 @@ private fun TrackingContent(
     waitingForFix: Boolean,
     fixAccuracy: Float?,
     fixProvider: String?,
+    fixUsable: Boolean,
+    canFinish: Boolean,
     message: String?,
     finishWarningErrorM: Float?,
     onFinish: () -> Unit,
@@ -305,8 +323,8 @@ private fun TrackingContent(
             text = {
                 Text(
                     "L'errore della misura è maggiore di " +
-                        "${"%.0f".format(MeasurementViewModel.FINISH_WARN_ERROR_METERS)} m " +
-                        "(stimato ±${"%.1f".format(errorM)} m). " +
+                        "${ItalianFormat.meters(MeasurementViewModel.FINISH_WARN_ERROR_METERS, 0)} " +
+                        "(stimato ±${ItalianFormat.meters(errorM)}). " +
                         "Vuoi aspettare un fix dal satellite per un errore minore?"
                 )
             },
@@ -321,17 +339,35 @@ private fun TrackingContent(
 
     Column(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.Center) {
         Text(
-            text = if (waitingForFix) "In attesa del fix GPS..." else "Muoviti fino al paglione",
+            text = if (waitingForFix) {
+                "In attesa del fix di partenza"
+            } else {
+                "Muoviti fino al paglione"
+            },
             style = MaterialTheme.typography.titleLarge,
             fontWeight = FontWeight.Bold,
             textAlign = TextAlign.Center,
             modifier = Modifier.fillMaxWidth()
         )
 
+        if (waitingForFix) {
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = "La partenza vuole un fix satellitare di adesso entro " +
+                    "±${ItalianFormat.meters(MeasurementRules.START_MAX_ACCURACY_M, 0)}" +
+                    (fixAccuracy?.let { " — ora ±${ItalianFormat.meters(it)}" } ?: "") +
+                    ". Resta in cielo aperto.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
+
         if (!waitingForFix) {
             Spacer(modifier = Modifier.height(16.dp))
             Text(
-                text = "${"%.1f".format(distanceM)} m",
+                text = ItalianFormat.meters(distanceM),
                 fontSize = 64.sp,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.primary,
@@ -340,7 +376,7 @@ private fun TrackingContent(
             )
             Spacer(modifier = Modifier.height(8.dp))
             Text(
-                text = "Percorsi: ${"%.1f".format(walkedM)} m",
+                text = "Percorso a piedi: ${ItalianFormat.meters(walkedM)}",
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
                 textAlign = TextAlign.Center,
@@ -365,13 +401,16 @@ private fun TrackingContent(
             text = "FINO A QUI",
             containerColor = MaterialTheme.colorScheme.tertiary,
             onClick = onFinish,
-            enabled = !waitingForFix
+            // Si chiude solo con un fix di adesso: senza, la distanza sarebbe
+            // quella di un fix vecchio e non del punto in cui sei.
+            enabled = canFinish
         )
         fixAccuracy?.let { accuracy ->
-            // Entro soglia il numero e' verde; sopra diventa rosso lampeggiante
-            // per dire "non fidarti ancora di questo numero", invece di
-            // mostrare un dato credibile solo in apparenza.
-            val insufficient = accuracy > GPS_ACCURACY_WARN_METERS
+            // Entro soglia il numero e' verde; sopra (o con un fix che non
+            // arriva piu') diventa rosso lampeggiante per dire "non fidarti
+            // ancora di questo numero", invece di mostrare un dato credibile
+            // solo in apparenza.
+            val insufficient = !fixUsable || accuracy > GPS_ACCURACY_WARN_METERS
             var blinkOn by remember(insufficient) { mutableStateOf(true) }
             LaunchedEffect(insufficient) {
                 if (!insufficient) return@LaunchedEffect
@@ -384,7 +423,7 @@ private fun TrackingContent(
 
             Spacer(modifier = Modifier.height(8.dp))
             Text(
-                text = "Precisione GPS: ±${"%.1f".format(accuracy)} m${providerSuffix(fixProvider)}",
+                text = "Precisione GPS: ±${ItalianFormat.meters(accuracy)}${providerSuffix(fixProvider)}",
                 style = MaterialTheme.typography.labelSmall,
                 color = if (insufficient) {
                     alertedColor
@@ -398,9 +437,15 @@ private fun TrackingContent(
             )
             if (insufficient) {
                 Text(
-                    text = "Fix scadente: con questa precisione la misura può " +
-                        "sbagliare di oltre ±${"%.0f".format(GPS_ACCURACY_WARN_METERS)} m. " +
-                        "Attendi in cielo aperto.",
+                    text = if (fixUsable) {
+                        "Fix scadente: con questa precisione la misura può " +
+                            "sbagliare di oltre ±${ItalianFormat.meters(GPS_ACCURACY_WARN_METERS, 0)}. " +
+                            "Attendi in cielo aperto."
+                    } else {
+                        "Fix vecchio o scadente: la misura si chiude solo con un " +
+                            "fix satellitare di adesso, entro " +
+                            "±${ItalianFormat.meters(MeasurementRules.TRACK_MAX_ACCURACY_M, 0)}."
+                    },
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.error,
                     textAlign = TextAlign.Center,
@@ -450,7 +495,7 @@ private fun DoneContent(
             )
             Spacer(modifier = Modifier.height(8.dp))
             Text(
-                text = "${"%.1f".format(measuredDistanceM)} m",
+                text = ItalianFormat.meters(measuredDistanceM),
                 fontSize = 64.sp,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.primary,
@@ -459,7 +504,7 @@ private fun DoneContent(
             )
             Spacer(modifier = Modifier.height(8.dp))
             Text(
-                text = "Percorso a piedi: ${"%.1f".format(walkedM)} m",
+                text = "Percorso a piedi: ${ItalianFormat.meters(walkedM)}",
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
                 textAlign = TextAlign.Center,
@@ -473,7 +518,7 @@ private fun DoneContent(
                 val poorPrecision = errorM > TOLERANCE_METERS
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    text = "Errore stimato: ±${"%.1f".format(errorM)} m",
+                    text = "Errore stimato: ±${ItalianFormat.meters(errorM)}",
                     style = MaterialTheme.typography.labelLarge,
                     fontWeight = if (poorPrecision) FontWeight.Bold else FontWeight.Normal,
                     color = if (poorPrecision) {
@@ -523,12 +568,12 @@ private fun DoneContent(
                         // La card ha sfondo pastello chiaro: il content color
                         // ereditato era un grigio senza contrasto.
                         Text(
-                            text = "Stima dell'app: ${"%.1f".format(estimated)} m",
+                            text = "Stima dell'app: ${ItalianFormat.meters(estimated)}",
                             style = MaterialTheme.typography.bodyLarge,
                             color = OnPanel
                         )
                         Text(
-                            text = "Scarto: ${if (delta >= 0f) "+" else ""}${"%.1f".format(delta)} m",
+                            text = "Scarto: ${ItalianFormat.signed(delta)} m",
                             style = MaterialTheme.typography.bodyLarge,
                             fontWeight = FontWeight.Medium,
                             color = OnPanel

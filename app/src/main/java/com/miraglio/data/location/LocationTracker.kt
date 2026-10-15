@@ -26,6 +26,14 @@ class LocationTracker @Inject constructor(
     private val _currentLocation = MutableStateFlow<Location?>(null)
     val currentLocation: StateFlow<Location?> = _currentLocation.asStateFlow()
 
+    /**
+     * Ultimo fix del solo provider satellitare: e' quello con cui si misura,
+     * perche' un fix di rete ha un errore che non si vede (l'accuratezza
+     * dichiarata e' ottimistica) e come partenza inventerebbe metri.
+     */
+    private val _gnssLocation = MutableStateFlow<Location?>(null)
+    val gnssLocation: StateFlow<Location?> = _gnssLocation.asStateFlow()
+
     private var started = false
 
     private val listener = LocationListener { location ->
@@ -44,8 +52,12 @@ class LocationTracker @Inject constructor(
     fun startLocationUpdates() {
         if (!hasFinePermission() || started) return
         started = true
-        requestUpdates(LocationManager.GPS_PROVIDER, 500L, 0.5f)
-        requestUpdates(LocationManager.NETWORK_PROVIDER, 1500L, 1f)
+        // Un fix al secondo e nessun filtro di distanza: camminando a 1,4 m/s
+        // i fix devono arrivare anche da fermi (per chiudere la misura serve
+        // un fix di adesso) e devono essere fitti abbastanza da contare i
+        // passi, che altrimenti cadono sotto la soglia del rumore.
+        requestUpdates(LocationManager.GPS_PROVIDER, 1000L, 0f)
+        requestUpdates(LocationManager.NETWORK_PROVIDER, 2000L, 0f)
     }
 
     fun stopLocationUpdates() {
@@ -77,6 +89,11 @@ class LocationTracker @Inject constructor(
         val accuracy = location.accuracy
         if (accuracy <= 0f || accuracy > MAX_ACCURACY_METERS) return
         _currentLocation.value = location
+        // Il fix da misurare lo decide la misura stessa (eta' e accuratezza),
+        // qui si tiene solo da parte l'ultimo del satellite.
+        if (location.provider == LocationManager.GPS_PROVIDER) {
+            _gnssLocation.value = location
+        }
     }
 
     companion object {

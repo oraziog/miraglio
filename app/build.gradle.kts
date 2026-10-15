@@ -1,3 +1,8 @@
+// Serve l'import esplicito: dentro il blocco `android` la parola `java` e'
+// l'estensione Java del progetto, quindi `java.util.Properties` non
+// risolverebbe.
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
@@ -18,8 +23,8 @@ android {
         // la propria con l'etichetta della release piu' recente su GitHub e
         // propone l'aggiornamento solo se quella e' piu' alta. Etichetta e
         // versione vanno mantenute allineate (tag v1.0.2 = versionName 1.0.2).
-        versionCode = 3
-        versionName = "1.0.2"
+        versionCode = 4
+        versionName = "1.0.3"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -28,25 +33,49 @@ android {
         buildConfigField("String", "UPDATE_REPO", "\"oraziog/miraglio\"")
     }
 
-    // Firma: si riusa la chiave di debug della macchina, la stessa con cui
-    // l'app e' gia' installata sul telefono. Non e' una scelta di comodo: una
-    // chiave diversa renderebbe impossibile aggiornare, perche' Android
-    // rifiuta un APK firmato da altri e obbliga a disinstallare (perdendo
-    // luoghi e calibrazioni). Il prezzo e' che quella chiave non e' segreta,
-    // quindi chiunque potrebbe firmare un APK che il telefono accetterebbe
-    // come aggiornamento di questo: accettabile per un app personale, da
-    // cambiare con una chiave dedicata se un giorno la distribuisci ad altri.
+    // ---------------------------------------------------------------------
+    // Firma: chiave di rilascio dedicata, custodita FUORI dal repository (in
+    // %USERPROFILE%\.miraglio\) e referenziata da `keystore.properties`, che
+    // e' in .gitignore. In CI arrivano le stesse quattro voci dalle variabili
+    // d'ambiente impostate dal workflow, con i valori presi dai segreti del
+    // repository.
     //
-    // In CI la chiave arriva dai segreti del repository (variabili d'ambiente
-    // impostate dal workflow), e i valori predefiniti sono quelli noti della
-    // chiave di debug di Android.
+    // Senza nessuna configurazione la release esce NON FIRMATA
+    // (`app-release-unsigned.apk`). Il ripiego sulla chiave di debug e' stato
+    // tolto apposta: quella chiave non e' una credenziale di distribuzione
+    // (chi la possiede puo' firmare un APK che il telefono accetta come
+    // aggiornamento di Miraglio), e un APK firmato con una chiave diversa da
+    // quella installata viene rifiutato in fase di aggiornamento: meglio un
+    // file che non si installa affatto che una firma sbagliata da scoprire
+    // dopo averlo pubblicato.
+    // ---------------------------------------------------------------------
+    val keystoreProperties = Properties().apply {
+        val file = rootProject.file("keystore.properties")
+        if (file.exists()) file.inputStream().use { load(it) }
+    }
+    // I valori si ripuliscono dagli spazi ai bordi: un segreto di GitHub
+    // caricato da file puo' arrivare con un a capo in coda, e una password con
+    // dentro un a capo farebbe fallire la firma solo in CI.
+    fun firmaDaProprieta(proprieta: String, variabile: String): String? =
+        (keystoreProperties.getProperty(proprieta) ?: System.getenv(variabile))
+            ?.trim()
+            ?.takeIf { it.isNotEmpty() }
+
     signingConfigs {
-        create("release") {
-            val debugKeystore = File(System.getProperty("user.home"), ".android/debug.keystore")
-            storeFile = File(System.getenv("KEYSTORE_PATH") ?: debugKeystore.path)
-            storePassword = System.getenv("KEYSTORE_PASSWORD") ?: "android"
-            keyAlias = System.getenv("KEY_ALIAS") ?: "androiddebugkey"
-            keyPassword = System.getenv("KEY_PASSWORD") ?: "android"
+        // Configurazione a meta' (es. c'e' il percorso ma non la password) e'
+        // un errore, non un motivo per firmare con qualcos'altro.
+        firmaDaProprieta("storeFile", "KEYSTORE_PATH")?.let { percorso ->
+            fun obbligatorio(proprieta: String, variabile: String): String =
+                firmaDaProprieta(proprieta, variabile) ?: throw GradleException(
+                    "Firma di rilascio incompleta: manca \"$proprieta\" in " +
+                        "keystore.properties (o la variabile d'ambiente $variabile)."
+                )
+            create("release") {
+                storeFile = File(percorso)
+                storePassword = obbligatorio("storePassword", "KEYSTORE_PASSWORD")
+                keyAlias = obbligatorio("keyAlias", "KEY_ALIAS")
+                keyPassword = obbligatorio("keyPassword", "KEY_PASSWORD")
+            }
         }
     }
 
@@ -54,7 +83,8 @@ android {
         release {
             isMinifyEnabled = true
             isShrinkResources = true
-            signingConfig = signingConfigs.getByName("release")
+            // Chiave dedicata se configurata, altrimenti firma nessuna.
+            signingConfig = signingConfigs.findByName("release")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"

@@ -1,10 +1,17 @@
 # Miraglio
 
+![Miraglio — calcolo balistico tiro 3D: bersaglio misurato, app al centro, arciere](docs/img/banner-miraglio.jpg)
+
 **Miraglio** è un'app Android per arcieri che **stima la distanza del bersaglio con la
 fotocamera del telefono** (modello pinhole + calibrazione focale), permette di
 **verificare la misura camminando con il GPS** e di **salvare i luoghi** (foto +
 misura + coordinate), condivisibili come pin Google Maps, QR code o foto georeferenziata.
 
+> **📲 Installare l'app sul telefono** (guida per chi la usa, non per chi la sviluppa):
+> [INSTALLAZIONE.md](INSTALLAZIONE.md) — download dalla release, conferma di Android,
+> prima calibrazione. Dalla prossima release lo stesso testo è pubblicato anche
+> nelle note di rilascio.
+>
 > **📖 Manuale d'uso (italiano):** [MANUALE.md](MANUALE.md) — calibrazione per il massimo
 > della precisione, limiti per dispositivo, zoom e modalità d'uso.
 
@@ -35,12 +42,22 @@ misura + coordinate), condivisibili come pin Google Maps, QR code o foto georefe
   sola volta al fermo immagine, zero inferenza sull'anteprima
 
 ### Verifica distanza (GPS)
-- **Partenza → cammina → arrivo**: distanza con Haversine, distanza a piedi
-  cumulata, accuratezza dei fix mostrata in tempo reale
+- **Partenza → cammina → arrivo**: distanza con Haversine, percorso a piedi
+  cumulato, accuratezza dei fix mostrata in tempo reale
+- La partenza si blocca **solo su un fix satellitare di adesso** (entro ±10 m,
+  confermato dal fix successivo): un fix vecchio o di rete come partenza
+  sposterebbe il punto di partenza di decine di metri, inventando distanza
+- Si misura solo col **provider satellitare**; i fix scadenti o vecchi non
+  entrano né nel percorso né nella chiusura, e "FINO A QUI" resta spento
+  finché non torna un fix di adesso
+- Il **percorso a piedi** somma ogni spostamento plausibile (rumore da fermo,
+  salti e buchi negli aggiornamenti esclusi dalle regole in
+  `domain/location/MeasurementRules.kt`, coperte da test)
 - **Errore stimato** (accuratezze dei due fix combinate in quadratura); oltre 5 m
   di incertezza l'app chiede conferma prima di chiudere la misura
-- La misura in corso **sopravvive alla morte del processo** e il GPS resta attivo
-  in background per **10 minuti** il tempo di raggiungere il punto finale
+- La misura in corso **sopravvive alla morte del processo** (se non è più
+  recente di 15 minuti) e il GPS resta attivo in background per **10 minuti**,
+  il tempo di raggiungere il punto finale
 
 ### Calibrazione focale
 - Focale **teorica** (FOV diagonale 67°) finché non si calibra: utile come prima
@@ -76,6 +93,19 @@ misura + coordinate), condivisibili come pin Google Maps, QR code o foto georefe
   sempre Android** (l'app non installa niente da sola)
 - L'APK scaricato è **firmato con la stessa chiave** di quello installato,
   quindi aggiornarsi **non cancella luoghi, foto e calibrazioni**
+- Nel dialog dell'app le note sono **solo le novità**: la guida di installazione
+  che apre la pagina della release viene tagliata al marcatore
+  `<!-- fine-guida-installazione -->` (logica pura in `domain/update/ReleaseNotes.kt`,
+  coperta da test)
+
+### Installare Miraglio su un altro telefono
+- In *Impostazioni* la card **Installa su un altro telefono** genera il **QR e il
+  link della release più recente**: l'altro arciere inquadra il QR, si apre la
+  pagina con le istruzioni e l'APK ([INSTALLAZIONE.md](INSTALLAZIONE.md))
+- **Condividi** manda il messaggio con il link, **Condividi il QR come immagine**
+  manda il QR come foto; il link resta visibile e copiabile nel dialog
+- Il link è costruito dal repository degli aggiornamenti (`BuildConfig.UPDATE_REPO`)
+  e punta a `/releases/latest`, quindi **non invecchia** con le versioni
 - Il confronto fra versioni è **numerico**: `1.0.10` è più recente di `1.0.9`
   (un confronto fra testi direbbe il contrario)
 
@@ -106,7 +136,8 @@ L'app si apre sulla schermata di **misura**; dal menu (☰) si raggiungono le al
 | Camera | CameraX 1.4 (ImageAnalysis + Preview), lenti multiple, zoom digitale |
 | ML / Vision | ONNX Runtime (YOLOv8n), ML Kit Text Recognition |
 | QR / Condivisione | ZXing (solo generazione), FileProvider, ExifInterface (GPS) |
-| GPS / Sensori | LocationManager (GPS + network), accelerometro/giroscopio, bussola |
+| GPS / Sensori | LocationManager (misure solo dal provider satellitare), accelerometro/giroscopio, bussola |
+| Formato display | Numeri con virgola decimale e date gg/mm/aaaa, ora di Roma, via `domain/format/ItalianFormat.kt` |
 | Build | Gradle (Kotlin DSL), libs.versions.toml, AGP 8.7.3, Kotlin 2.1.0 |
 | Min SDK | 26 (Android 8.0) — Target/Compile SDK 35 |
 | Aggiornamenti | GitHub Releases REST API (`HttpURLConnection` + `org.json`), FileProvider → installatore di sistema |
@@ -135,7 +166,7 @@ app/src/main/java/com/miraglio/
 │   ├── camera/        # PinholeDistanceEstimator (d = K·f/pixel)
 │   ├── location/      # GpsFix, Haversine, TargetEstimator (bersaglio stimato)
 │   ├── share/         # ShareMessageComposer (messaggi con pin Maps)
-│   ├── update/        # AppVersion (confronto versioni), ReleaseInfo
+│   ├── update/        # AppVersion, ReleaseInfo, ReleaseNotes (taglia la guida), InstallInvite
 │   └── vision/        # ObjectDetector, DetectionBox, TargetScorer
 ├── di/                # Moduli Hilt (VisionModule)
 ├── power/             # BackgroundPowerController (sensori/GPS in background)
@@ -151,13 +182,15 @@ app/src/main/java/com/miraglio/
     └── theme/         # Tema Material 3 (verde/arancio, chiaro/scuro)
 
 app/src/main/assets/models/yolov8n_hybrid.onnx   # modello di riconoscimento (~12 MB)
-app/src/test/java/com/miraglio/domain/update/     # test del confronto versioni
+app/src/main/res/drawable-nodpi/                  # icona dell'app (foto PNG, 432 px)
+app/src/test/java/com/miraglio/                   # test: aggiornamento, invito, regole di misura
+docs/img/                                         # banner, infografica e icona usate nei documenti
 .github/workflows/release.yml                    # tag -> APK firmato -> release
 ```
 
 ---
 
-## Stato corrente (v1.0.2, versionCode 3)
+## Stato corrente (v1.0.3, versionCode 4)
 
 | Funzione | Stato |
 |----------|-------|
@@ -169,8 +202,9 @@ app/src/test/java/com/miraglio/domain/update/     # test del confronto versioni
 | Luoghi: salva/elenca/rinomina/elimina | ✅ Funzionante |
 | Condivisione: messaggio + pin Maps + QR + foto con EXIF GPS | ✅ Funzionante |
 | Aggiornamento dall'app (GitHub Releases) | ⚠️ Integrato, **da provare sul telefono** |
+| Invito installazione (QR/link per un altro arciere) | ⚠️ Integrato, **da provare sul telefono** |
 | OCR testi (ML Kit) | ⚠️ Integrato ma **non attivo** sul flusso video attuale |
-| Test automatici | ⚠️ Solo il confronto versioni dell'aggiornamento |
+| Test automatici | ✅ Coprono aggiornamento, invito installazione e regole di misura |
 
 Note oneste:
 - La precisione senza calibrazione focale può essere peggiore del 30%: la guida
@@ -190,7 +224,9 @@ Note oneste:
 ```
 
 Output: `app/build/outputs/apk/debug/app-debug.apk` e
-`app/build/outputs/apk/release/app-release.apk`
+`app/build/outputs/apk/release/app-release.apk` (senza `keystore.properties` la
+release esce **`app-release-unsigned.apk`**, che non si installa: vedi
+*Firma dell'APK*).
 
 ### Requisiti
 - JDK 17+
@@ -205,6 +241,14 @@ Il tag è la versione: da quella release la vostra app installata si accorge
 dell'aggiornamento. Il workflow **rifiuta** la pubblicazione se tag e
 `versionName` non coincidono, perché produrrebbe un APK che nessuno vede come
 più recente.
+
+Le istruzioni di installazione che finiscono nella release sono
+[INSTALLAZIONE.md](INSTALLAZIONE.md): è l'**unica fonte**, quindi si correggono
+solo lì (il workflow la usa come corpo delle note, seguito dal changelog
+generato da GitHub). Il banner e l'infografica che contiene sono puntati a
+`https://raw.githubusercontent.com/oraziog/miraglio/master/docs/img/...` e non
+a percorsi relativi: il corpo della release non è un file del repository, e un
+link relativo darebbe 404 proprio sulla pagina che deve installare l'app.
 
 1. Alza **`versionCode`** e **`versionName`** in [app/build.gradle.kts](app/build.gradle.kts)
    (es. `versionCode = 4`, `versionName = "1.0.3"`).
@@ -221,15 +265,51 @@ git push origin master v1.0.3
    in *Actions* su GitHub.
 4. Al primo avvio dopo la pubblicazione l'app installata avvisa che c'è la 1.0.3.
 
-La firma usata è la **chiave di debug della macchina di sviluppo**, la stessa
-con cui l'app è installata sul telefono: è la condizione perché l'aggiornamento
-sostituisca l'app senza disinstallarla (e senza perdere i dati). In CI la chiave
-arriva dal segreto `KEYSTORE_B64` del repository; il workflow non firma niente
-e si ferma con un errore se il segreto manca.
+### Firma dell'APK
+
+La firma è **l'identità dell'app**: Android accetta un aggiornamento solo se è
+firmato con la stessa chiave del pacchetto installato, altrimenti prima va
+disinstallata l'app (perdendo luoghi, foto e calibrazioni). Per questo la chiave
+di rilascio è **dedicata** e custodita **fuori dal repository**, in
+`%USERPROFILE%\.miraglio\miraglio-release.jks`. Prima era la chiave di debug
+(della macchina di sviluppo, password `android`): chi la possedeva poteva firmare
+un APK che il telefono avrebbe accettato come aggiornamento di Miraglio.
+
+| Dove | Cosa |
+|------|------|
+| `keystore.properties` (radice, in `.gitignore`) | `storeFile`, `storePassword`, `keyAlias`, `keyPassword` — come si firma in locale |
+| Segreti del repository | `KEYSTORE_B64` (il `.jks` in base64), `KEYSTORE_PASSWORD`, `KEY_ALIAS`, `KEY_PASSWORD` — il workflow li passa come variabili d'ambiente `KEYSTORE_PATH`, `KEYSTORE_PASSWORD`, `KEY_ALIAS`, `KEY_PASSWORD` |
+| Impronta del certificato | `ce7eaa63…34250f73` (SHA-256): il workflow la controlla sull'APK appena compilato e **si ferma** se non combacia |
+
+Password e chiave si copiano in un gestore di password (e il `.jks` anche fuori
+dal computer): **se la chiave si perde, nessun telefono può più aggiornarsi**, e
+ogni arciere deve disinstallare e reinstallare. L'impronta e la password sono
+anche in `%USERPROFILE%\.miraglio\CHIAVE-FIRMA.txt`, da spostare lì.
+
+Senza chiave configurata la release esce **non firmata**
+(`app-release-unsigned.apk`): il ripiego sulla chiave di debug è stato tolto
+apposta, perché un APK firmato con la chiave sbagliata si scoprirebbe solo al
+primo aggiornamento fallito sui telefoni. Su una macchina nuova la chiave si
+ricrea così (la password la chiede keytool: va scelta lunga e custodita):
+
+```bash
+keytool -genkeypair -keystore "$HOME/.miraglio/miraglio-release.jks" \
+  -storetype PKCS12 -keyalg RSA -keysize 4096 -validity 10000 \
+  -alias miraglio -dname "CN=Miraglio, O=Miraglio, C=IT"
+```
+
+> ⚠️ **Una volta sola, con il cambio di chiave**: le release fino alla 1.0.2
+> erano firmate con la chiave di debug, quindi il **primo** aggiornamento dopo
+> il cambio non si installa sopra: va disinstallato e reinstallato (i dati
+> salvati si perdono). Dalla 1.0.3 in avanti la chiave non cambia più.
 
 ---
 
 ## Installazione (sviluppo)
+
+> **Non sei uno sviluppatore?** La guida che cerchi è
+> [INSTALLAZIONE.md](INSTALLAZIONE.md): installazione da GitHub direttamente dal
+> telefono, senza ADB e senza compilare.
 
 ```bash
 # Via ADB (device autorizzato)
@@ -237,8 +317,11 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 adb shell am start -n com.miraglio/.MainActivity
 ```
 
-In alternativa i script `send_apk.cmd` / `send_apk.ps1` inviano l'APK debug al
-telefono via [croc](https://getcroc.com) mostrando un QR code col link di ricezione.
+In alternativa i script `send_apk.cmd` / `send_apk.ps1` inviano al telefono
+l'APK **piu' recente** fra debug e release, via [croc](https://getcroc.com),
+mostrando un QR code col link di ricezione e dicendo quale dei due ha scelto.
+Per forzare uno dei due: `send_apk.ps1 -Variante debug` (o `release`); con
+`-Prova` si vede solo cosa invierebbe, senza inviare niente.
 
 Una volta pubblicata, la release si può installare anche a mano (utile la prima
 volta, o per rimediare a un'installazione andata male): l'APK è allegato alla

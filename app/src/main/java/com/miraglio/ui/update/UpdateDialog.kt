@@ -16,7 +16,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.miraglio.data.update.UpdateManager
-import java.util.Locale
+import com.miraglio.domain.format.ItalianFormat
+import com.miraglio.domain.update.ReleaseNotes
 
 /**
  * Dialog dell'aggiornamento: un solo punto di ingresso, guidato dallo stato
@@ -38,6 +39,10 @@ fun UpdateDialog(
     onPostpone: () -> Unit
 ) {
     val release = state.releaseOrNull() ?: return
+
+    // Dal corpo della release si toglie la guida di installazione, che sta li'
+    // per chi apre la pagina su GitHub ma qui sarebbe fuori posto.
+    val novita = ReleaseNotes.forUpdateDialog(release.notes)
 
     val downloading = state is UpdateManager.State.Downloading
     AlertDialog(
@@ -83,9 +88,9 @@ fun UpdateDialog(
                         color = MaterialTheme.colorScheme.error
                     )
 
-                    else -> if (release.notes.isNotEmpty()) {
+                    else -> if (novita.isNotEmpty()) {
                         Text(
-                            text = release.notes,
+                            text = novita,
                             style = MaterialTheme.typography.bodySmall,
                             // Le note possono essere lunghe: scorrono dentro
                             // il dialog invece di farlo crescere a dismisura.
@@ -152,4 +157,4 @@ private fun UpdateManager.State.releaseOrNull() = when (this) {
 }
 
 private fun sizeSuffix(bytes: Long): String =
-    if (bytes <= 0L) "" else " - %.1f MB".format(Locale.getDefault(), bytes / 1_048_576.0)
+    if (bytes <= 0L) "" else " - ${ItalianFormat.number(bytes / 1_048_576.0, 1)} MB"

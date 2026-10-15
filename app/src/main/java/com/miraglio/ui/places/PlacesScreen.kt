@@ -44,6 +44,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.miraglio.data.places.PlaceKind
 import com.miraglio.data.places.PlaceRecord
+import com.miraglio.domain.format.ItalianFormat
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -168,7 +169,7 @@ private fun PlaceListItem(
                 Text(
                     text = buildString {
                         append(if (record.kind == PlaceKind.GPS) "Misura GPS" else "Scatto")
-                        distance?.let { append("  ·  ${"%.1f".format(it)} m") }
+                        distance?.let { append("  ·  ${ItalianFormat.meters(it)}") }
                         // Precisione della misura GPS: il numero va bene
                         // anche se incerto, ma l'incertezza si dichiara.
                         record.gpsErrorM?.let {

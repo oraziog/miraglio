@@ -93,6 +93,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.miraglio.domain.format.ItalianFormat
 import com.miraglio.domain.share.ShareMessageComposer
 import com.miraglio.domain.vision.DetectionBox
 import com.miraglio.ui.places.PlaceShareBar
@@ -828,7 +829,7 @@ private fun CaptureActionBar(
                     shape = RoundedCornerShape(8.dp)
                 ) {
                     Text(
-                        text = "${"%.1f".format(zoomRatio)}x",
+                        text = "${ItalianFormat.number(zoomRatio, 1)}x",
                         color = Color.White,
                         fontWeight = FontWeight.Bold,
                         style = MaterialTheme.typography.titleMedium,
@@ -892,7 +893,7 @@ private fun ResultPanel(
         Column(modifier = Modifier.padding(12.dp)) {
             Text(
                 text = if (result != null) {
-                    "Distanza: ${"%.1f".format(result.distanceMeters)} m"
+                    "Distanza: ${ItalianFormat.meters(result.distanceMeters)}"
                 } else {
                     "Inquadra il bersaglio, poi scatta fermo immagine"
                 },
@@ -902,18 +903,19 @@ private fun ResultPanel(
             )
             if (result != null) {
                 Text(
-                    text = "Angolo: ${"%.1f".format(result.pitchAngleDegrees)}°",
+                    text = "Angolo: ${ItalianFormat.number(result.pitchAngleDegrees, 1)}°",
                     style = MaterialTheme.typography.bodyMedium,
                     color = OnPanel
                 )
                 Text(
-                    text = "Distanza compensata: ${"%.1f".format(result.horizontalDistanceM)} m",
+                    text = "Distanza compensata: ${ItalianFormat.meters(result.horizontalDistanceM)}",
                     style = MaterialTheme.typography.bodyMedium,
                     color = OnPanel
                 )
                 bearingDegrees?.let { bearing ->
                     Text(
-                        text = "Direzione: ${ShareMessageComposer.compassLabel(bearing)} (${"%.0f".format(bearing)}°)",
+                        text = "Direzione: ${ShareMessageComposer.compassLabel(bearing)} " +
+                            "(${ItalianFormat.number(bearing, 0)}°)",
                         style = MaterialTheme.typography.bodyMedium,
                         color = OnPanel
                     )
@@ -955,7 +957,7 @@ private fun MeasureModePanel(
     val horizontal = orientation == LineOrientation.HORIZONTAL
     val sizeLabel = if (horizontal) "Altezza" else "Larghezza"
     val angleSuffix = if (pitchDegrees != null) {
-        "  \u2022  Angolo: ${"%.1f".format(pitchDegrees)}°"
+        "  \u2022  Angolo: ${ItalianFormat.number(pitchDegrees, 1)}°"
     } else {
         ""
     }
@@ -991,7 +993,7 @@ private fun MeasureModePanel(
                         text = buildString {
                             append(
                                 if (distResult != null) {
-                                    "Distanza: ${"%.1f".format(distResult.distanceMeters)} m"
+                                    "Distanza: ${ItalianFormat.meters(distResult.distanceMeters)}"
                                 } else {
                                     "Scatta e posiziona le linee sul bersaglio"
                                 }
@@ -1004,7 +1006,8 @@ private fun MeasureModePanel(
                     )
                     if (distResult != null) {
                         Text(
-                            text = "Distanza compensata: ${"%.1f".format(distResult.horizontalDistanceM)} m",
+                            text = "Distanza compensata: " +
+                                ItalianFormat.meters(distResult.horizontalDistanceM),
                             style = MaterialTheme.typography.bodySmall,
                             color = OnPanel
                         )
@@ -1132,7 +1135,7 @@ private fun sizeResultText(
         "Inserisci la distanza (m)"
     !hasLines -> "Posiziona le linee sui bordi dell'oggetto"
     measuredSize == null -> "Misura non disponibile"
-    measuredSize >= 0.99f -> "$sizeLabel: ${"%.2f".format(measuredSize)} m"
-    else -> "$sizeLabel: ${"%.1f".format(measuredSize * 100)} cm"
+    measuredSize >= 0.99f -> "$sizeLabel: ${ItalianFormat.meters(measuredSize, 2)}"
+    else -> "$sizeLabel: ${ItalianFormat.number(measuredSize * 100, 1)} cm"
 }
 

@@ -20,6 +20,7 @@ import com.miraglio.data.places.PlaceRecord
 import com.miraglio.data.places.PlaceSaveState
 import com.miraglio.data.places.PlacesRepository
 import com.miraglio.data.sensor.Compass
+import com.miraglio.domain.format.ItalianFormat
 import com.miraglio.data.sensor.Inclinometer
 import com.miraglio.data.session.ShotVerificationStore
 import com.miraglio.data.settings.AppSettingsStore
@@ -1011,8 +1012,8 @@ class CaptureViewModel @Inject constructor(
         }
         val factor = if (focal != null && focalMain != null && focalMain > 0f) focal / focalMain else 1f
         val factorLabel = when {
-            factor < 0.95f -> " \u2248${"%.1f".format(factor)}\u00d7"
-            factor > 1.05f -> " \u2248${"%.1f".format(factor)}\u00d7"
+            factor < 0.95f -> " \u2248${ItalianFormat.number(factor, 1)}\u00d7"
+            factor > 1.05f -> " \u2248${ItalianFormat.number(factor, 1)}\u00d7"
             else -> ""
         }
         _lensLabel.value = "Lente ${idx + 1}/${ids.size}$factorLabel"
