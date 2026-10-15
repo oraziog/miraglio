@@ -27,13 +27,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.miraglio.data.places.PlaceSaveState
 import com.miraglio.data.share.QrCodeRenderer
+import com.miraglio.ui.theme.PanelContainer
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -42,8 +42,8 @@ import kotlinx.coroutines.withContext
  * messaggio con pin Maps) e QR (il pin come codice, per lo scambio in
  * presenza). Riutilizzata da Capture, Verifica GPS e dettaglio Luoghi.
  *
- * [hasPin] false disabilita Condividi e QR: senza fix GPS non c'e' niente da
- * mettere su una mappa (la foto resta comunque condivisibile dal dettaglio).
+ * Il QR usa [qrContent] (link Maps) e, senza fix GPS, cade sul testo di
+ * [shareMessage]: il bottone resta premibile e lo scanner legge la misura.
  */
 @Composable
 fun PlaceShareBar(
@@ -59,10 +59,14 @@ fun PlaceShareBar(
     var showQr by remember { mutableStateOf(false) }
     var qrBitmap by remember { mutableStateOf<Bitmap?>(null) }
 
-    LaunchedEffect(showQr, qrContent) {
-        if (showQr && qrContent != null) {
+    // Con il pin il QR apre la mappa; senza pin si codifica il messaggio
+    // di condivisione, che uno scanner legge lo stesso.
+    val effectiveQr = qrContent ?: shareMessage
+
+    LaunchedEffect(showQr, effectiveQr) {
+        if (showQr && effectiveQr != null) {
             qrBitmap = withContext(Dispatchers.Default) {
-                QrCodeRenderer.render(qrContent, 512)
+                QrCodeRenderer.render(effectiveQr, 512)
             }
         } else {
             qrBitmap = null
@@ -71,7 +75,7 @@ fun PlaceShareBar(
 
     Card(
         modifier = modifier,
-        colors = CardDefaults.cardColors(containerColor = Color(0xB3FFFFFF)),
+        colors = CardDefaults.cardColors(containerColor = PanelContainer),
         shape = RoundedCornerShape(12.dp)
     ) {
         Row(
@@ -138,7 +142,7 @@ fun PlaceShareBar(
             }
             FilledTonalButton(
                 onClick = { showQr = true },
-                enabled = hasPin,
+                enabled = effectiveQr != null || hasPin,
                 contentPadding = compactPadding,
                 modifier = Modifier.weight(1f)
             ) {
@@ -172,7 +176,11 @@ fun PlaceShareBar(
                         CircularProgressIndicator(modifier = Modifier.size(48.dp))
                     }
                     Text(
-                        text = "Inquadralo per aprire la mappa (anche da iPhone).",
+                        text = if (qrContent != null) {
+                            "Inquadralo per aprire la mappa (anche da iPhone)."
+                        } else {
+                            "Nessun fix GPS: il QR contiene il testo della misura."
+                        },
                         style = MaterialTheme.typography.bodyMedium,
                         modifier = Modifier.padding(top = 12.dp)
                     )

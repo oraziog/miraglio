@@ -12,6 +12,7 @@ import com.miraglio.ui.focal.FocalCaptureScreen
 import com.miraglio.ui.measurement.MeasurementScreen
 import com.miraglio.ui.places.PlaceDetailScreen
 import com.miraglio.ui.places.PlacesScreen
+import com.miraglio.ui.settings.SettingsScreen
 
 @Composable
 fun MiraglioNavGraph(navController: NavHostController) {
@@ -23,7 +24,14 @@ fun MiraglioNavGraph(navController: NavHostController) {
             CaptureScreen(
                 onNavigateToCalibration = { navController.navigate(Screen.Calibration.route) },
                 onNavigateToMeasurement = { navController.navigate(Screen.Measurement.route) },
-                onNavigateToPlaces = { navController.navigate(Screen.Places.route) }
+                onNavigateToPlaces = { navController.navigate(Screen.Places.route) },
+                onNavigateToSettings = { navController.navigate(Screen.Settings.route) }
+            )
+        }
+
+        composable(Screen.Settings.route) {
+            SettingsScreen(
+                onNavigateBack = { navController.popBackStack() }
             )
         }
 

@@ -169,6 +169,11 @@ private fun PlaceListItem(
                     text = buildString {
                         append(if (record.kind == PlaceKind.GPS) "Misura GPS" else "Scatto")
                         distance?.let { append("  ·  ${"%.1f".format(it)} m") }
+                        // Precisione della misura GPS: il numero va bene
+                        // anche se incerto, ma l'incertezza si dichiara.
+                        record.gpsErrorM?.let {
+                            append("  ·  ${com.miraglio.domain.share.ShareMessageComposer.accuracyLabel(it)}")
+                        }
                         record.bearingDeg?.let {
                             append("  ·  ${com.miraglio.domain.share.ShareMessageComposer.compassLabel(it)}")
                         }

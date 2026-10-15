@@ -2,6 +2,7 @@ package com.miraglio.ui.measurement
 
 import android.Manifest
 import android.content.pm.PackageManager
+import android.location.LocationManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
@@ -21,6 +22,7 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Place
 import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -54,6 +56,12 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import com.miraglio.data.places.PlaceSaveState
 import com.miraglio.ui.places.PlaceShareBar
 import com.miraglio.ui.places.ShareIntents
+import com.miraglio.ui.theme.LocalOutdoorMode
+import com.miraglio.ui.theme.OnPanel
+import com.miraglio.ui.theme.OutdoorAmber
+import com.miraglio.ui.theme.OutdoorGreen
+import com.miraglio.ui.theme.OutdoorRed
+import com.miraglio.ui.theme.PanelContainer
 import kotlinx.coroutines.delay
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -156,12 +164,17 @@ fun MeasurementScreen(
                         walkedM = uiState.walkedDistanceM,
                         waitingForFix = uiState.waitingForFix,
                         fixAccuracy = uiState.fixAccuracyM,
+                        fixProvider = uiState.fixProvider,
                         message = uiState.message,
+                        finishWarningErrorM = uiState.finishWarningErrorM,
                         onFinish = viewModel::finishMeasurement,
+                        onConfirmFinish = viewModel::confirmFinishMeasurement,
+                        onDismissFinishWarning = viewModel::dismissFinishWarning,
                         onCancel = viewModel::reset
                     )
                     MeasurementPhase.DONE -> DoneContent(
                         measuredDistanceM = uiState.finalDistanceM,
+                        finalErrorM = uiState.finalErrorM,
                         estimatedDistanceM = uiState.estimatedDistanceM,
                         walkedM = uiState.walkedDistanceM,
                         shareMessage = uiState.shareMessage,
@@ -273,10 +286,39 @@ private fun TrackingContent(
     walkedM: Float,
     waitingForFix: Boolean,
     fixAccuracy: Float?,
+    fixProvider: String?,
     message: String?,
+    finishWarningErrorM: Float?,
     onFinish: () -> Unit,
+    onConfirmFinish: () -> Unit,
+    onDismissFinishWarning: () -> Unit,
     onCancel: () -> Unit
 ) {
+    // La chiusura e' stata chiesta, ma l'errore stimato sui due fix supera la
+    // soglia: prima di registrare la distanza si chiede se vale la pena
+    // aspettare un fix satellitare migliore.
+    finishWarningErrorM?.let { errorM ->
+        AlertDialog(
+            onDismissRequest = onDismissFinishWarning,
+            icon = { Icon(Icons.Default.Warning, contentDescription = null) },
+            title = { Text("Errore della misura elevato") },
+            text = {
+                Text(
+                    "L'errore della misura è maggiore di " +
+                        "${"%.0f".format(MeasurementViewModel.FINISH_WARN_ERROR_METERS)} m " +
+                        "(stimato ±${"%.1f".format(errorM)} m). " +
+                        "Vuoi aspettare un fix dal satellite per un errore minore?"
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = onConfirmFinish) { Text("Continua") }
+            },
+            dismissButton = {
+                TextButton(onClick = onDismissFinishWarning) { Text("Aspetta") }
+            }
+        )
+    }
+
     Column(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.Center) {
         Text(
             text = if (waitingForFix) "In attesa del fix GPS..." else "Muoviti fino al paglione",
@@ -325,15 +367,46 @@ private fun TrackingContent(
             onClick = onFinish,
             enabled = !waitingForFix
         )
-        fixAccuracy?.let {
+        fixAccuracy?.let { accuracy ->
+            // Entro soglia il numero e' verde; sopra diventa rosso lampeggiante
+            // per dire "non fidarti ancora di questo numero", invece di
+            // mostrare un dato credibile solo in apparenza.
+            val insufficient = accuracy > GPS_ACCURACY_WARN_METERS
+            var blinkOn by remember(insufficient) { mutableStateOf(true) }
+            LaunchedEffect(insufficient) {
+                if (!insufficient) return@LaunchedEffect
+                while (true) {
+                    delay(GPS_BLINK_MS)
+                    blinkOn = !blinkOn
+                }
+            }
+            val alertedColor = GPS_BAD_FIX_COLOR.copy(alpha = if (blinkOn) 1f else 0.15f)
+
             Spacer(modifier = Modifier.height(8.dp))
             Text(
-                text = "Precisione GPS: ±${"%.1f".format(it)} m",
+                text = "Precisione GPS: ±${"%.1f".format(accuracy)} m${providerSuffix(fixProvider)}",
                 style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                color = if (insufficient) {
+                    alertedColor
+                } else {
+                    // Fix affidabile entro la soglia: verde, per distinguerlo a
+                    // colpo d'occhio dai casi in cui il numero non e' credibile.
+                    GPS_GOOD_FIX_COLOR
+                },
                 textAlign = TextAlign.Center,
                 modifier = Modifier.fillMaxWidth()
             )
+            if (insufficient) {
+                Text(
+                    text = "Fix scadente: con questa precisione la misura può " +
+                        "sbagliare di oltre ±${"%.0f".format(GPS_ACCURACY_WARN_METERS)} m. " +
+                        "Attendi in cielo aperto.",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.error,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
         }
         Spacer(modifier = Modifier.height(12.dp))
         TextButton(onClick = onCancel, modifier = Modifier.align(Alignment.CenterHorizontally)) {
@@ -345,6 +418,7 @@ private fun TrackingContent(
 @Composable
 private fun DoneContent(
     measuredDistanceM: Float?,
+    finalErrorM: Float?,
     estimatedDistanceM: Float?,
     walkedM: Float,
     shareMessage: String?,
@@ -392,6 +466,35 @@ private fun DoneContent(
                 modifier = Modifier.fillMaxWidth()
             )
 
+            // L'errore stimato accompagna sempre il numero finale: la misura
+            // resta registrata anche sopra la soglia, ma l'incertezza va
+            // dichiarata (e viene poi salvata e condivisa con lo stesso ±).
+            finalErrorM?.let { errorM ->
+                val poorPrecision = errorM > TOLERANCE_METERS
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = "Errore stimato: ±${"%.1f".format(errorM)} m",
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = if (poorPrecision) FontWeight.Bold else FontWeight.Normal,
+                    color = if (poorPrecision) {
+                        OUT_OF_TOLERANCE_COLOR
+                    } else {
+                        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                    },
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                if (poorPrecision) {
+                    Text(
+                        text = "Precisione limitata: il valore può sbagliare di diversi metri.",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = OUT_OF_TOLERANCE_COLOR,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            }
+
             estimatedDistanceM?.let { estimated ->
                 val delta = measuredDistanceM - estimated
                 val withinTolerance = kotlin.math.abs(delta) <= TOLERANCE_METERS
@@ -399,7 +502,13 @@ private fun DoneContent(
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     colors = CardDefaults.cardColors(
-                        containerColor = if (withinTolerance) {
+                        // In outdoor le tinte pastello non esistono piu': la
+                        // card diventa nera con testo giallo, come i pannelli
+                        // sopra l'immagine, cosi' la distinzione la fanno le
+                        // icone/righe colorate e non il fondo.
+                        containerColor = if (LocalOutdoorMode.current) {
+                            PanelContainer
+                        } else if (withinTolerance) {
                             Color(0xFFE8F5E9)
                         } else {
                             Color(0xFFFFEBEE)
@@ -411,21 +520,25 @@ private fun DoneContent(
                         modifier = Modifier.padding(16.dp),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
+                        // La card ha sfondo pastello chiaro: il content color
+                        // ereditato era un grigio senza contrasto.
                         Text(
                             text = "Stima dell'app: ${"%.1f".format(estimated)} m",
-                            style = MaterialTheme.typography.bodyLarge
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = OnPanel
                         )
                         Text(
                             text = "Scarto: ${if (delta >= 0f) "+" else ""}${"%.1f".format(delta)} m",
                             style = MaterialTheme.typography.bodyLarge,
-                            fontWeight = FontWeight.Medium
+                            fontWeight = FontWeight.Medium,
+                            color = OnPanel
                         )
                         Spacer(modifier = Modifier.height(8.dp))
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Icon(
                                 Icons.Default.CheckCircle,
                                 contentDescription = null,
-                                tint = if (withinTolerance) Color(0xFF2E7D32) else MaterialTheme.colorScheme.error
+                                tint = if (withinTolerance) GPS_GOOD_FIX_COLOR else OUT_OF_TOLERANCE_COLOR
                             )
                             Spacer(modifier = Modifier.size(6.dp))
                             Text(
@@ -436,7 +549,7 @@ private fun DoneContent(
                                 },
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.Bold,
-                                color = if (withinTolerance) Color(0xFF2E7D32) else MaterialTheme.colorScheme.error
+                                color = if (withinTolerance) GPS_GOOD_FIX_COLOR else OUT_OF_TOLERANCE_COLOR
                             )
                         }
                     }
@@ -498,3 +611,39 @@ private fun BigActionButton(
 }
 
 private const val TOLERANCE_METERS = 3f
+
+/**
+ * Sopra questa precisione (raggio di confidenza del fix, in metri) il fix
+ * diventa rosso lampeggiante. All'aperto un fix satellitare scende a ~3 m:
+ * la soglia sta appena sopra, cosi' un fix normale resta verde e lampeggia
+ * solo cio' che davvero non e' credibile (rete, GNSS senza lock).
+ */
+private const val GPS_ACCURACY_WARN_METERS = 4f
+
+/** Periodo di lampeggio della precisione insufficiente. */
+private const val GPS_BLINK_MS = 500L
+
+/**
+ * Arancione del rigo "fuori tolleranza": attenzione, non errore bloccante.
+ * In outdoor passa a una tinta piu' luminosa, che regge sul fondo nero.
+ */
+private val OUT_OF_TOLERANCE_COLOR: Color
+    @Composable get() = if (LocalOutdoorMode.current) OutdoorAmber else Color(0xFFF57C00)
+
+/**
+ * Verde di un fix GPS entro soglia: il numero mostrato e' credibile.
+ * Il verde scuro normale sul nero non arriva alla soglia di contrasto.
+ */
+private val GPS_GOOD_FIX_COLOR: Color
+    @Composable get() = if (LocalOutdoorMode.current) OutdoorGreen else Color(0xFF2E7D32)
+
+/** Rosso lampeggiante di un fix GPS oltre soglia, piu' brillante in outdoor. */
+private val GPS_BAD_FIX_COLOR: Color
+    @Composable get() = if (LocalOutdoorMode.current) OutdoorRed else Color(0xFFD32F2F)
+
+/** Origine del fix, per capire da dove viene l'accuratezza mostrata. */
+private fun providerSuffix(provider: String?): String = when (provider) {
+    LocationManager.GPS_PROVIDER -> " (satellite)"
+    LocationManager.NETWORK_PROVIDER -> " (rete)"
+    else -> ""
+}

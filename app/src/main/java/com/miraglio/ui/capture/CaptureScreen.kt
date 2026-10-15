@@ -30,16 +30,20 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Place
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.Card
@@ -64,6 +68,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
@@ -83,18 +88,28 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.miraglio.domain.share.ShareMessageComposer
+import com.miraglio.domain.vision.DetectionBox
 import com.miraglio.ui.places.PlaceShareBar
 import com.miraglio.ui.places.ShareIntents
+import com.miraglio.ui.theme.LocalOutdoorMode
+import com.miraglio.ui.theme.OnPanel
+import com.miraglio.ui.theme.OutdoorWhite
+import com.miraglio.ui.theme.OutdoorYellow
+import com.miraglio.ui.theme.PanelContainer
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.LifecycleOwner
 import kotlin.math.abs
 import kotlin.math.min
+
+/** Verde fosforo dei bersagli riconosciuti, condiviso da fermo immagine e preview. */
+private val FosforoGreen: Color = Color(0xFF64DD17)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -102,6 +117,7 @@ fun CaptureScreen(
     onNavigateToCalibration: () -> Unit = {},
     onNavigateToMeasurement: () -> Unit = {},
     onNavigateToPlaces: () -> Unit = {},
+    onNavigateToSettings: () -> Unit = {},
     viewModel: CaptureViewModel = hiltViewModel()
 ) {
     val context = LocalContext.current
@@ -112,12 +128,15 @@ fun CaptureScreen(
     val zoomRatio by viewModel.zoomRatio.collectAsState()
     val lineOrientation by viewModel.lineOrientation.collectAsState()
     val liveSnap by viewModel.liveSnap.collectAsState()
+    val detectionBoxes by viewModel.detectionBoxes.collectAsState()
     val lensLabel by viewModel.lensLabel.collectAsState()
     val measureDirection by viewModel.measureDirection.collectAsState()
     val measureDistanceInput by viewModel.measureDistanceInput.collectAsState()
     val result = captureState.result
     val frozenBitmap by viewModel.frozenBitmap.collectAsState()
     val frozen = frozenBitmap != null
+    // Stato del bottone in barra: la preferenza vera la legge MainActivity.
+    val outdoorMode by viewModel.outdoorMode.collectAsState()
     val placeSaveState by viewModel.placeSaveState.collectAsState()
 
     var hasPermission by remember {
@@ -208,6 +227,16 @@ fun CaptureScreen(
                                 }
                             )
                             DropdownMenuItem(
+                                text = { Text("Impostazioni") },
+                                leadingIcon = {
+                                    Icon(Icons.Default.Tune, contentDescription = null)
+                                },
+                                onClick = {
+                                    menuOpen = false
+                                    onNavigateToSettings()
+                                }
+                            )
+                            DropdownMenuItem(
                                 text = { Text("Come si usa") },
                                 leadingIcon = {
                                     Icon(Icons.Default.Info, contentDescription = null)
@@ -220,10 +249,29 @@ fun CaptureScreen(
                         }
                     }
                 },
+                actions = {
+                    // Toggle a un tocco: la modalita' outdoor si accende e si
+                    // spegne da qui, senza passare dalle Impostazioni.
+                    IconButton(onClick = viewModel::toggleOutdoorMode) {
+                        Icon(
+                            imageVector = if (outdoorMode) {
+                                Icons.Default.DarkMode
+                            } else {
+                                Icons.Default.LightMode
+                            },
+                            contentDescription = if (outdoorMode) {
+                                "Disattiva modalita' outdoor"
+                            } else {
+                                "Attiva modalita' outdoor (alto contrasto)"
+                            }
+                        )
+                    }
+                },
                 colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
                     containerColor = MaterialTheme.colorScheme.primary,
                     titleContentColor = MaterialTheme.colorScheme.onPrimary,
-                    navigationIconContentColor = MaterialTheme.colorScheme.onPrimary
+                    navigationIconContentColor = MaterialTheme.colorScheme.onPrimary,
+                    actionIconContentColor = MaterialTheme.colorScheme.onPrimary
                 )
             )
         }
@@ -244,6 +292,7 @@ fun CaptureScreen(
                 if (frozenImage != null) {
                     LineeFrozenOverlay(
                         bitmap = frozenImage,
+                        boxes = detectionBoxes,
                         orientation = lineOrientation,
                         topNorm = captureState.lineTopNorm,
                         bottomNorm = captureState.lineBottomNorm,
@@ -315,7 +364,7 @@ fun CaptureScreen(
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(FROZEN_CONTROLS_HEIGHT),
+                            .height(FrozenControlsHeight),
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         FrozenModeButtons(
@@ -458,6 +507,7 @@ private fun ShowCameraPreview(
 @Composable
 private fun LineeFrozenOverlay(
     bitmap: Bitmap,
+    boxes: List<DetectionBox>,
     orientation: LineOrientation,
     topNorm: Float?,
     bottomNorm: Float?,
@@ -469,12 +519,21 @@ private fun LineeFrozenOverlay(
     onMoveSecond: (Float) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    // Colori delle linee sopra l'immagine: in outdoor la primaria diventa
+    // giallo fluorescente e la secondaria bianca, perche' verde e blu
+    // sull'immagine al sole perdono contrasto.
+    val primaryLine = if (LocalOutdoorMode.current) OutdoorYellow else FosforoGreen
+    val secondaryLine = if (LocalOutdoorMode.current) OutdoorWhite else Color(0xFF2979FF)
+
     // Stato locale del trascinamento: fluido a 60fps, commit al ViewModel solo al rilascio.
     // firstAcc/secondAcc: spostamento della SINGOLA linea afferrata vicino al suo tratto.
-    var panAcc by remember { mutableStateOf(0f) }
-    var spreadAcc by remember { mutableStateOf(0f) }
-    var firstAcc by remember { mutableStateOf(0f) }
-    var secondAcc by remember { mutableStateOf(0f) }
+    // mutableFloatStateOf (non mutableStateOf): questi accumulatori vengono
+    // riscritti a ogni evento di trascinamento, e lo stato float specializzato
+    // evita un'allocazione di boxing per ogni scrittura.
+    var panAcc by remember { mutableFloatStateOf(0f) }
+    var spreadAcc by remember { mutableFloatStateOf(0f) }
+    var firstAcc by remember { mutableFloatStateOf(0f) }
+    var secondAcc by remember { mutableFloatStateOf(0f) }
     val dispTop = topNorm?.let { (it + panAcc + firstAcc - spreadAcc / 2f).coerceIn(0f, 1f) }
     val dispBottom = bottomNorm?.let { (it + panAcc + secondAcc + spreadAcc / 2f).coerceIn(0f, 1f) }
     val horizontal = orientation == LineOrientation.HORIZONTAL
@@ -595,7 +654,26 @@ private fun LineeFrozenOverlay(
 
         Canvas(modifier = Modifier.fillMaxSize()) {
             if (size.width <= 0f || size.height <= 0f) return@Canvas
-            listOf(dispTop to Color(0xFF64DD17), dispBottom to Color(0xFF2979FF))
+            // Bersagli riconosciuti al fermo immagine: un riquadro verde fosforo
+            // attorno a ciascuno. Il riquadro segue l'estensione reale del
+            // rilevamento (per il paglione circolare e' praticamente quadrato).
+            if (displayW > 0f && displayH > 0f) {
+                boxes.forEach { box ->
+                    val l = offsetX + box.left.coerceIn(0f, 1f) * displayW
+                    val t = offsetY + box.top.coerceIn(0f, 1f) * displayH
+                    val r = offsetX + box.right.coerceIn(0f, 1f) * displayW
+                    val b = offsetY + box.bottom.coerceIn(0f, 1f) * displayH
+                    if (r > l && b > t) {
+                        drawRect(
+                            color = primaryLine,
+                            topLeft = Offset(l, t),
+                            size = Size(r - l, b - t),
+                            style = Stroke(width = 3.dp.toPx())
+                        )
+                    }
+                }
+            }
+            listOf(dispTop to primaryLine, dispBottom to secondaryLine)
                 .filter { it.first != null }
                 .forEach { (norm, color) ->
                     if (horizontal && displayH > 0f) {
@@ -632,6 +710,9 @@ private fun LiveSnapOverlay(
     modifier: Modifier = Modifier
 ) {
     val horizontal = orientation == LineOrientation.HORIZONTAL
+    // Linee dello snap live: stesso criterio del fermo immagine.
+    val primaryLine = if (LocalOutdoorMode.current) OutdoorYellow else FosforoGreen
+    val secondaryLine = if (LocalOutdoorMode.current) OutdoorWhite else Color(0xFF2979FF)
     BoxWithConstraints(modifier = modifier) {
         val bw = constraints.maxWidth.toFloat()
         val bh = constraints.maxHeight.toFloat()
@@ -657,7 +738,7 @@ private fun LiveSnapOverlay(
                         val db = offsetY + box.bottom.coerceIn(0f, 1f) * displayH
                         if (dr > dl && db > dt) {
                             drawRect(
-                                color = Color(0xFF64DD17),
+                                color = primaryLine,
                                 topLeft = Offset(dl, dt),
                                 size = Size(dr - dl, db - dt),
                                 style = Stroke(width = 2.dp.toPx())
@@ -669,7 +750,7 @@ private fun LiveSnapOverlay(
                         val rh = (box.bottom.coerceIn(0f, 1f) - box.top.coerceIn(0f, 1f)) * displayH
                         if (rw > 0f && rh > 0f) {
                             drawRect(
-                                color = Color(0xFF64DD17),
+                                color = primaryLine,
                                 topLeft = Offset(rl, rt),
                                 size = Size(rw, rh),
                                 style = Stroke(width = 2.dp.toPx())
@@ -678,13 +759,13 @@ private fun LiveSnapOverlay(
             if (horizontal && displayH > 0f) {
                 val yTop = offsetY + box.top.coerceIn(0f, 1f) * displayH
                 val yBottom = offsetY + box.bottom.coerceIn(0f, 1f) * displayH
-                drawLine(Color(0xFF64DD17), Offset(0f, yTop), Offset(size.width, yTop), 3f)
-                drawLine(Color(0xFF2979FF), Offset(0f, yBottom), Offset(size.width, yBottom), 3f)
+                drawLine(primaryLine, Offset(0f, yTop), Offset(size.width, yTop), 3f)
+                drawLine(secondaryLine, Offset(0f, yBottom), Offset(size.width, yBottom), 3f)
             } else if (!horizontal && displayW > 0f) {
                 val xLeft = offsetX + box.left.coerceIn(0f, 1f) * displayW
                 val xRight = offsetX + box.right.coerceIn(0f, 1f) * displayW
-                drawLine(Color(0xFF64DD17), Offset(xLeft, 0f), Offset(xLeft, size.height), 3f)
-                drawLine(Color(0xFF2979FF), Offset(xRight, 0f), Offset(xRight, size.height), 3f)
+                drawLine(primaryLine, Offset(xLeft, 0f), Offset(xLeft, size.height), 3f)
+                drawLine(secondaryLine, Offset(xRight, 0f), Offset(xRight, size.height), 3f)
             }
         }
     }
@@ -783,14 +864,17 @@ private fun CaptureActionBar(
 private fun OverlayReticle(
     modifier: Modifier = Modifier
 ) {
+    // In outdoor la crocetta di mira passa al giallo fluorescente: e' il
+    // riferimento da vedere a colpo d'occhio sul verde del bosco.
+    val crosshairColor = if (LocalOutdoorMode.current) OutdoorYellow else Color(0xCCFFFFFF)
     Canvas(modifier = modifier) {
         val centerX = size.width / 2f
         val centerY = size.height / 2f
         val crosses = 30.dp.toPx()
 
-        drawLine(Color(0xCCFFFFFF), Offset(centerX - crosses, centerY), Offset(centerX + crosses, centerY), strokeWidth = 2f)
-        drawLine(Color(0xCCFFFFFF), Offset(centerX, centerY - crosses), Offset(centerX, centerY + crosses), strokeWidth = 2f)
-        drawCircle(Color(0x99FFFFFF), radius = 40.dp.toPx(), center = Offset(centerX, centerY), style = Stroke(2f))
+        drawLine(crosshairColor, Offset(centerX - crosses, centerY), Offset(centerX + crosses, centerY), strokeWidth = 2f)
+        drawLine(crosshairColor, Offset(centerX, centerY - crosses), Offset(centerX, centerY + crosses), strokeWidth = 2f)
+        drawCircle(crosshairColor.copy(alpha = 0.85f), radius = 40.dp.toPx(), center = Offset(centerX, centerY), style = Stroke(2f))
     }
 }@Composable
 private fun ResultPanel(
@@ -802,7 +886,7 @@ private fun ResultPanel(
     Card(
         modifier = modifier,
         colors = CardDefaults.cardColors(
-            containerColor = Color(0xB3FFFFFF)
+            containerColor = PanelContainer
         )
     ) {
         Column(modifier = Modifier.padding(12.dp)) {
@@ -814,24 +898,24 @@ private fun ResultPanel(
                 },
                 fontWeight = FontWeight.Bold,
                 style = MaterialTheme.typography.titleMedium,
-                color = Color(0xFF000000)
+                color = OnPanel
             )
             if (result != null) {
                 Text(
                     text = "Angolo: ${"%.1f".format(result.pitchAngleDegrees)}°",
                     style = MaterialTheme.typography.bodyMedium,
-                    color = Color(0xFF000000)
+                    color = OnPanel
                 )
                 Text(
                     text = "Distanza compensata: ${"%.1f".format(result.horizontalDistanceM)} m",
                     style = MaterialTheme.typography.bodyMedium,
-                    color = Color(0xFF000000)
+                    color = OnPanel
                 )
                 bearingDegrees?.let { bearing ->
                     Text(
                         text = "Direzione: ${ShareMessageComposer.compassLabel(bearing)} (${"%.0f".format(bearing)}°)",
                         style = MaterialTheme.typography.bodyMedium,
-                        color = Color(0xFF000000)
+                        color = OnPanel
                     )
                 }
             }
@@ -839,14 +923,17 @@ private fun ResultPanel(
     }
 }
 
-/** Colori dei campi del pannello inferiore: font nero su sfondo chiaro. */
+/**
+ * Colori dei campi del pannello inferiore: nero su sfondo chiaro nell'uso
+ * normale, giallo fluorescente su nero in modalita' outdoor.
+ */
 @Composable
-private fun blackFieldColors() = OutlinedTextFieldDefaults.colors(
-    focusedTextColor = Color.Black,
-    unfocusedTextColor = Color.Black,
-    focusedLabelColor = Color.Black,
-    unfocusedLabelColor = Color.Black,
-    cursorColor = Color.Black
+private fun panelFieldColors() = OutlinedTextFieldDefaults.colors(
+    focusedTextColor = OnPanel,
+    unfocusedTextColor = OnPanel,
+    focusedLabelColor = OnPanel,
+    unfocusedLabelColor = OnPanel,
+    cursorColor = OnPanel
 )
 
 @Composable
@@ -874,15 +961,18 @@ private fun MeasureModePanel(
     }
     Card(
         modifier = modifier,
-        colors = CardDefaults.cardColors(containerColor = Color(0xB3FFFFFF))
+        colors = CardDefaults.cardColors(containerColor = PanelContainer)
     ) {
         Column(
             modifier = Modifier
-                .padding(12.dp)
+                // Padding e spaziatura ridotti: le tre voci del pannello
+                // (campo, misura, "Distanza compensata:") devono stare tutte
+                // nell'altezza fissa del contenitore, senza scorrere.
+                .padding(8.dp)
                 // L'altezza del pannello e' fissata dal contenitore: con font
                 // grandi il contenuto scorre invece de' crescere.
                 .verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+            verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
             when (direction) {
                 MeasureDirection.DISTANZA -> {
@@ -892,8 +982,10 @@ private fun MeasureModePanel(
                         label = { Text(if (horizontal) "Altezza nota (cm)" else "Larghezza nota (cm)") },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                         singleLine = true,
+                        textStyle = MaterialTheme.typography.bodyMedium,
+                        // Nessuna altezza forzata: si dimensiona Material.
                         modifier = Modifier.fillMaxWidth(),
-                        colors = blackFieldColors()
+                        colors = panelFieldColors()
                     )
                     Text(
                         text = buildString {
@@ -907,14 +999,14 @@ private fun MeasureModePanel(
                             if (distResult != null) append(angleSuffix)
                         },
                         fontWeight = FontWeight.Bold,
-                        style = MaterialTheme.typography.titleMedium,
-                        color = Color(0xFF000000)
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = OnPanel
                     )
                     if (distResult != null) {
                         Text(
                             text = "Distanza compensata: ${"%.1f".format(distResult.horizontalDistanceM)} m",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = Color(0xFF000000)
+                            style = MaterialTheme.typography.bodySmall,
+                            color = OnPanel
                         )
                     }
                 }
@@ -925,8 +1017,10 @@ private fun MeasureModePanel(
                         label = { Text("Distanza nota (m)") },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                         singleLine = true,
+                        textStyle = MaterialTheme.typography.bodyMedium,
+                        // Nessuna altezza forzata: si dimensiona Material.
                         modifier = Modifier.fillMaxWidth(),
-                        colors = blackFieldColors()
+                        colors = panelFieldColors()
                     )
                     Text(
                         text = buildString {
@@ -934,8 +1028,8 @@ private fun MeasureModePanel(
                             if (measuredSize != null) append(angleSuffix)
                         },
                         fontWeight = FontWeight.Bold,
-                        style = MaterialTheme.typography.titleMedium,
-                        color = Color(0xFF000000)
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = OnPanel
                     )
                 }
             }
@@ -958,14 +1052,20 @@ private fun FrozenModeButtons(
     ) {
         FilledTonalButton(
             onClick = onToggleDirection,
+            contentPadding = MeasureButtonPadding,
             modifier = Modifier.weight(1f)
         ) {
             Text(
                 if (direction == MeasureDirection.DISTANZA) "Misurazione distanza"
-                else "Misurazione altezza"
+                else "Misurazione altezza",
+                style = MaterialTheme.typography.labelMedium,
+                maxLines = 1
             )
         }
-        FilledTonalButton(onClick = onToggleOrientation) {
+        FilledTonalButton(
+            onClick = onToggleOrientation,
+            contentPadding = MeasureButtonPadding
+        ) {
             Icon(
                 Icons.Default.Refresh,
                 // Il bottone mostra l'AZIONE (cosa diventera'), non lo stato:
@@ -975,12 +1075,14 @@ private fun FrozenModeButtons(
                 } else {
                     "Passa a linee orizzontali"
                 },
-                modifier = Modifier.size(20.dp)
+                modifier = Modifier.size(18.dp)
             )
-            Spacer(modifier = Modifier.width(6.dp))
+            Spacer(modifier = Modifier.width(4.dp))
             Text(
                 if (orientation == LineOrientation.HORIZONTAL) "\u2192 Linee Verticali"
-                else "\u2192 Linee Orizzontali"
+                else "\u2192 Linee Orizzontali",
+                style = MaterialTheme.typography.labelMedium,
+                maxLines = 1
             )
         }
     }
@@ -988,6 +1090,37 @@ private fun FrozenModeButtons(
 
 /** Altezza riservata ai controlli del fermo immagine (direzione + pannello). */
 private val FROZEN_CONTROLS_HEIGHT = 200.dp
+
+/**
+ * In outdoor i testi sono ingranditi: il contenitore cresce nella stessa
+ * misura, cosi' il pannello continua a stare tutto dentro (compresa la voce
+ * "Distanza compensata:") senza scorrere.
+ *
+ * L'altezza resta FISSA per modalita': cambiare da distanza ad altezza non
+ * ridimensiona l'immagine sopra, che era il motivo dell'altezza fissa.
+ */
+private val FrozenControlsHeight: Dp
+    @Composable get() = if (LocalOutdoorMode.current) FROZEN_CONTROLS_HEIGHT * 1.3f else FROZEN_CONTROLS_HEIGHT
+
+/**
+ * Padding interno dei bottoni della misura: la riga deve restare bassa per
+ * lasciare spazio al pannello, che deve mostrare anche la "Distanza compensata".
+ */
+private val MeasureButtonPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
+
+/*
+ * I campi "valore noto" (altezza/larghezza o distanza) NON hanno un'altezza
+ * forzata, ed e' una scelta deliberata dopo un difetto vero: con
+ * Modifier.height(44,8.dp) - il 20% in meno del default, chiesto per stringere
+ * il pannello - il valore digitato (preimpostato o appena scritto) spariva,
+ * perche' il testo finiva fuori dall'altezza del campo.
+ *
+ * Il campo Material si dimensiona da solo: riserva 16.dp sopra e 16.dp sotto
+ * piu' la riga di testo (il suo MinHeight di 56.dp e' 16 + 24 + 16 con
+ * bodyLarge) e cresce quando la riga e' piu' alta, come in modalita' outdoor o
+ * con i font di sistema grandi. Lasciando fare a lui il valore non puo' piu'
+ * finire tagliato.
+ */
 
 private fun sizeResultText(
     sizeLabel: String,

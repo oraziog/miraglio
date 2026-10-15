@@ -1,6 +1,7 @@
 package com.miraglio.data.places
 
 import com.miraglio.domain.location.GpsFix
+import kotlin.math.sqrt
 
 /** Tipo di luogo salvato. */
 enum class PlaceKind {
@@ -52,4 +53,17 @@ data class PlaceRecord(
 ) {
     val hasAnyPin: Boolean
         get() = shotFix != null || targetFix != null || startFix != null || endFix != null
+
+    /**
+     * Errore stimato della distanza GPS partenza -> arrivo: le accuratezze
+     * dei due fix sono raggi di confidenza, quindi si combinano in
+     * quadratura (due fix da ±4 m danno ~±5,7 m sulla distanza).
+     * Null per gli scatti CAMERA (la distanza viene dalla visione).
+     */
+    val gpsErrorM: Float?
+        get() {
+            val s = startFix ?: return null
+            val e = endFix ?: return null
+            return sqrt(s.accuracyM * s.accuracyM + e.accuracyM * e.accuracyM)
+        }
 }

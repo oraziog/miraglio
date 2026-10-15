@@ -56,16 +56,29 @@ class PlacesRepository @Inject constructor(
     /** Ricarica l'indice da disco e rimuove le foto orfane. */
     suspend fun reload() = withContext(Dispatchers.IO) {
         val records = loadIndex()
+        // Confronto sul NOME COMPLETO ("<id>.jpg"): paragonare
+        // nameWithoutExtension all'elenco dei photoFile cancellava OGNI
+        // foto come "orfana" a ogni avvio dell'app, e l'aggiornamento ha
+        // costretto un riavvio: tutte le immagini sono sparite insieme.
         val validFiles = records.mapNotNull { it.photoFile }.toSet()
         dir.listFiles { f ->
-            f.isFile && f.extension == "jpg" && f.nameWithoutExtension !in validFiles
+            f.isFile && f.extension == "jpg" &&
+                f.name !in validFiles && f.nameWithoutExtension !in validFiles
         }?.forEach { it.delete() }
         _places.value = records
     }
 
-    /** File foto del record, se esiste ancora. */
+    /**
+     * File foto del record, se esiste ancora. Prova il nome cosi' com'era
+     * nel record e, in ripiego, con l'estensione .jpg: indici scritti da
+     * versioni vecchie conservano solo l'id.
+     */
     fun photoFile(record: PlaceRecord): File? =
-        record.photoFile?.let { File(dir, it).takeIf { f -> f.exists() } }
+        record.photoFile?.let { name ->
+            File(dir, name).takeIf { it.exists() }
+                ?: File(dir, if (name.endsWith(".jpg")) name else "$name.jpg")
+                    .takeIf { it.exists() }
+        }
 
     /** URI content:// per la condivisione (FileProvider, niente permessi). */
     fun photoUri(record: PlaceRecord): Uri? = photoFile(record)?.let {
@@ -112,7 +125,7 @@ class PlacesRepository @Inject constructor(
     /** Elimina il luogo con la sua foto. */
     suspend fun delete(id: String) = withContext(Dispatchers.IO) {
         val target = _places.value.firstOrNull { it.id == id }
-        target?.photoFile?.let { File(dir, it).delete() }
+        target?.let { photoFile(it)?.delete() }
         val updated = _places.value.filterNot { it.id == id }
         writeIndex(updated)
         _places.value = updated

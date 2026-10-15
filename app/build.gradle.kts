@@ -46,6 +46,13 @@ android {
     }
 
     lint {
+        // AGP aggancia gia' lint al task `check` (check -> lint -> lintDebug):
+        // qui si alza solo la soglia. Con warningsAsErrors qualsiasi
+        // segnalazione di livello warning fa fallire `gradle check`, cosi' un
+        // problema non puo' piu' passare inosservato in una build di verifica.
+        // Le regole disattivate sotto restano fuori dal conteggio.
+        warningsAsErrors = true
+
         // Notifiche "e' disponibile una versione piu' recente" delle dipendenze:
         // non sono difetti; l'aggiornamento massivo del toolchain e' una
         // decisione a parte, non un fix di qualita' del codice.

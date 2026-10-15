@@ -55,6 +55,7 @@ class PlaceDetailViewModel @Inject constructor(
                 return@launch
             }
             val message = shareMessageFor(record)
+            val pin = pinFix(record)
             val photoFile = repository.photoFile(record)
             val thumb = photoFile?.let { loadThumbnail(it) }
             val shareUri = photoFile?.let { file ->
@@ -86,7 +87,9 @@ class PlaceDetailViewModel @Inject constructor(
                 record = record,
                 thumbnail = thumb,
                 shareMessage = message,
-                qrContent = qrContentFor(record),
+                // Con il pin il QR apre la mappa; senza fix si codifica il
+                // messaggio di condivisione, che uno scanner legge lo stesso.
+                qrContent = pin?.let { ShareMessageComposer.mapsLink(it) } ?: message,
                 shareImageUri = shareUri,
                 missingPhoto = record.photoFile != null && photoFile == null
             )
@@ -113,19 +116,18 @@ class PlaceDetailViewModel @Inject constructor(
             PlaceKind.GPS -> {
                 val end = record.endFix ?: return null
                 val distance = record.distanceM ?: record.walkedM ?: return null
-                ShareMessageComposer.gpsPlace(distance, record.startFix, end)
+                // gpsPlace aggiunge l'errore (±) gia' calcolato sui fix:
+                // la precisione resta nel messaggio condiviso anche per le
+                // misure accettate con errore elevato.
+                ShareMessageComposer.gpsPlace(distance, record.startFix, end, record.gpsErrorM)
             }
         }
     }
 
-    /** Contenuto del QR: bersaglio stimato, altrimenti arrivo/scatto/partenza. */
-    private fun qrContentFor(record: PlaceRecord): String? {
-        val fix: GpsFix? = record.targetFix
-            ?: record.endFix
-            ?: record.shotFix
-            ?: record.startFix
-        return fix?.let { ShareMessageComposer.mapsLink(it) }
-    }
+    /** Fix preferenziale per il pin del QR: bersaglio stimato, altrimenti
+     *  arrivo, scatto, partenza. */
+    private fun pinFix(record: PlaceRecord): GpsFix? =
+        record.targetFix ?: record.endFix ?: record.shotFix ?: record.startFix
 
     /** Rinomina il luogo. */
     fun rename(newLabel: String) {

@@ -37,6 +37,14 @@ object TargetScorer {
         bestTarget(detections, imageWidth, imageHeight, preferredLabels = null)
 
     /**
+     * Il box di area maggiore fra i rilevamenti: e' il criterio con cui le
+     * linee si agganciano al fermo immagine (l'oggetto piu' grande inquadrato,
+     * qualunque sia la classe riconosciuta).
+     */
+    fun largest(detections: List<DetectionBox>): DetectionBox? =
+        detections.maxByOrNull { it.area() }
+
+    /**
      * Sceglie il miglior box privilegiando in ordine le classi in [preferredLabels]
      * (es. paglione -> targa). Se nessuna classe preferita produce un box, ripiega
      * sul miglior box qualunque sia la classe.

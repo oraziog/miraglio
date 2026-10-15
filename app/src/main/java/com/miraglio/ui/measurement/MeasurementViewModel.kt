@@ -32,11 +32,27 @@ data class MeasurementUiState(
     val currentDistanceM: Float = 0f,
     val walkedDistanceM: Float = 0f,
     val finalDistanceM: Float? = null,
+    /**
+     * Errore stimato della distanza finale (accuratezze dei due fix combinate
+     * in quadratura). Accompagna il numero anche quando la misura e' stata
+     * accettata nonostante l'errore elevato, e finisce nel luogo salvato e
+     * nel messaggio di condivisione.
+     */
+    val finalErrorM: Float? = null,
     val fixAccuracyM: Float? = null,
+    /** Provider del fix corrente ("gps", "network", ...): l'accuratezza
+     *  dipende dall'origine, e va mostrata per capire ±20 m. */
+    val fixProvider: String? = null,
     val waitingForFix: Boolean = false,
     val gpsEnabled: Boolean = true,
     val estimatedDistanceM: Float? = null,
     val message: String? = null,
+    /**
+     * Errore stimato della misura (m), non null quando "FINO A QUI" attende
+     * conferma: il valore supera la soglia oltre cui il numero finale non e'
+     * piu' affidabile di quella soglia stessa.
+     */
+    val finishWarningErrorM: Float? = null,
     // --- Luoghi: condivisione e QR della misura terminata ---
     val shareMessage: String? = null,
     val qrContent: String? = null
@@ -60,6 +76,9 @@ class MeasurementViewModel @Inject constructor(
     private val _gpsEnabled = MutableStateFlow(true)
     private val _message = MutableStateFlow<String?>(null)
 
+    /** Non null quando la chiusura della misura attende conferma (errore > soglia). */
+    private val _finishWarning = MutableStateFlow<Float?>(null)
+
     /** Stato di salvataggio del luogo (misura GPS). */
     private val _placeSaveState = MutableStateFlow(PlaceSaveState.IDLE)
     val placeSaveState: StateFlow<PlaceSaveState> = _placeSaveState.asStateFlow()
@@ -77,6 +96,17 @@ class MeasurementViewModel @Inject constructor(
 
     private fun distanceBetween(a: Location, b: Location): Float =
         Haversine.distanceMeters(a.latitude, a.longitude, b.latitude, b.longitude).toFloat()
+
+    /**
+     * Errore combinato della misura: l'accuratezza dei fix e' un raggio di
+     * confidenza, quindi i due errori si sommano in quadratura (due fix da
+     * ±4 m danno ~±5,7 m sulla distanza).
+     */
+    private fun measurementErrorM(start: Location, end: Location): Float {
+        val a = start.accuracy
+        val b = end.accuracy
+        return kotlin.math.sqrt(a * a + b * b)
+    }
 
     private val positions = combine(_start, _current) { start, current ->
         start to current
@@ -101,8 +131,9 @@ class MeasurementViewModel @Inject constructor(
 
     val uiState: StateFlow<MeasurementUiState> = combine(
         localState,
-        store.estimatedDistanceM
-    ) { local, estimated ->
+        store.estimatedDistanceM,
+        _finishWarning
+    ) { local, estimated, finishWarning ->
         val liveDistance = if (local.phase != MeasurementPhase.IDLE &&
             local.start != null && local.current != null
         ) {
@@ -111,6 +142,16 @@ class MeasurementViewModel @Inject constructor(
             0f
         }
         val finalDistance = if (local.phase == MeasurementPhase.DONE) liveDistance else null
+        // Errore stimato della distanza: stesso calcolo della soglia di
+        // conferma, esposto affinche' resti attaccato al numero (schermata,
+        // luogo salvato, condivisione).
+        val finalError = if (finalDistance != null &&
+            local.start != null && local.current != null
+        ) {
+            measurementErrorM(local.start!!, local.current!!)
+        } else {
+            null
+        }
         // Nel DONE si espongono messaggio e QR per la condivisione del luogo.
         val startFix = if (local.phase == MeasurementPhase.DONE) {
             local.start?.let { GpsFix.fromLocation(it) }
@@ -127,13 +168,16 @@ class MeasurementViewModel @Inject constructor(
             currentDistanceM = liveDistance,
             walkedDistanceM = local.walked,
             finalDistanceM = finalDistance,
+            finalErrorM = finalError,
             fixAccuracyM = local.current?.accuracy,
+            fixProvider = local.current?.provider,
             waitingForFix = local.waitingForFix,
             gpsEnabled = local.gpsEnabled,
             estimatedDistanceM = estimated,
             message = _message.value,
+            finishWarningErrorM = finishWarning,
             shareMessage = if (finalDistance != null && endFix != null) {
-                ShareMessageComposer.gpsPlace(finalDistance, startFix, endFix)
+                ShareMessageComposer.gpsPlace(finalDistance, startFix, endFix, finalError)
             } else {
                 null
             },
@@ -308,9 +352,35 @@ class MeasurementViewModel @Inject constructor(
             _message.value = "Fix GPS assente: attendi qualche secondo e riprova"
             return
         }
-        val distance = distanceBetween(start, current)
+        // Sotto la soglia si chiude subito; sopra si chiede conferma, perche'
+        // il numero finale sarebbe sbagliato di oltre la soglia stessa.
+        val error = measurementErrorM(start, current)
+        if (error > FINISH_WARN_ERROR_METERS) {
+            _finishWarning.value = error
+            return
+        }
+        completeMeasurement(start, current)
+    }
+
+    /** "Continua": chiude la misura nonostante l'errore stimato elevato. */
+    fun confirmFinishMeasurement() {
+        if (_phase.value != MeasurementPhase.TRACKING) return
+        val start = _start.value ?: return
+        val current = _current.value ?: return
+        _finishWarning.value = null
+        completeMeasurement(start, current)
+    }
+
+    /** "Aspetta": resta in TRACKING in attesa di un fix migliore. */
+    fun dismissFinishWarning() {
+        _finishWarning.value = null
+    }
+
+    private fun completeMeasurement(start: Location, end: Location) {
+        val distance = distanceBetween(start, end)
         _phase.value = MeasurementPhase.DONE
         _waitingForFix.value = false
+        _finishWarning.value = null
         powerController.setMeasurementTracking(false)
         store.setMeasured(distance)
         tracker.stopLocationUpdates()
@@ -326,6 +396,7 @@ class MeasurementViewModel @Inject constructor(
         _walked.value = 0f
         _waitingForFix.value = false
         _message.value = null
+        _finishWarning.value = null
         _placeSaveState.value = PlaceSaveState.IDLE
         refreshGpsStatus()
         tracker.startLocationUpdates()
@@ -370,6 +441,12 @@ class MeasurementViewModel @Inject constructor(
     companion object {
         private const val MIN_STEP_METERS = 1f
         private const val MAX_STEP_METERS = 100f
+
+        /**
+         * Oltre questo errore combinato sui due fix la distanza finale non e'
+         * affidabile: si chiede conferma prima di registrarla.
+         */
+        const val FINISH_WARN_ERROR_METERS = 5f
 
         /** Chiave-mestra del restore misura (persistenza di processo). */
         private const val KEY_ACTIVE = "measurement.active"

@@ -1,20 +1,15 @@
 package com.miraglio.data.camera
 
 import android.annotation.SuppressLint
+import android.graphics.Bitmap
 import android.util.Log
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.ImageProxy
 import com.miraglio.data.ocr.OcrTextRecognizer
 import com.miraglio.domain.vision.DetectionBox
-import com.miraglio.domain.vision.ObjectDetector
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-import android.graphics.Bitmap
 
 data class AnalyzerFrameState(
     val detectionBoxes: List<DetectionBox> = emptyList(),
@@ -23,10 +18,17 @@ data class AnalyzerFrameState(
     val frameHeight: Int = 0
 )
 
+/**
+ * Analizzatore dei fotogrammi di anteprima.
+ *
+ * NON esegue inferenza: tiene solo l'ultimo fotogramma utile
+ * ([getLatestBitmap]) e le sue dimensioni. Il riconoscimento dei bersagli
+ * avviene una volta sola, sul fermo immagine, quando l'utente scatta
+ * (vedi CaptureViewModel.analyzeFrozenLines): cosi' il preview non paga
+ * inferenza continua e nulla compare prima dello scatto.
+ */
 class MiraglioAnalyzer(
-    private val detector: ObjectDetector,
     private val ocrRecognizer: OcrTextRecognizer,
-    private val scope: CoroutineScope,
     private val ocrEveryNthFrame: Int = OCR_EVERY_NTH_FRAME
 ) : ImageAnalysis.Analyzer {
 
@@ -84,19 +86,14 @@ class MiraglioAnalyzer(
                 } else bitmap
                 latestBitmap = rotatedBitmap
                 latestRotationDegrees = rotation
-                scope.launch {
-                    val detectionResult = withContext(Dispatchers.Default) {
-                        detector.detect(rotatedBitmap)
-                    }
-
-                    // OCR disattivato: nessun riconoscimento testo dai fotogrammi.
-                    _frameState.value = AnalyzerFrameState(
-                        detectionBoxes = detectionResult.detections,
-                        ocrLines = emptyList(),
-                        frameWidth = rotatedBitmap.width,
-                        frameHeight = rotatedBitmap.height
-                    )
-                }
+                // Nessun rilevamento qui: solo fotogramma e dimensioni reali,
+                // che servono al fermo immagine e alla focale teorica.
+                _frameState.value = AnalyzerFrameState(
+                    detectionBoxes = emptyList(),
+                    ocrLines = emptyList(),
+                    frameWidth = rotatedBitmap.width,
+                    frameHeight = rotatedBitmap.height
+                )
             }
         } catch (t: Throwable) {
             Log.w(TAG, "Errore non bloccante nell'analisi frame", t)

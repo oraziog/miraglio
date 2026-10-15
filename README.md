@@ -1,164 +1,226 @@
 # Miraglio
 
-**Miraglio** is an Android application for archers and marksmen that provides real-time distance estimation, ballistic calculations, and sight tape generation using the device camera and sensors.
+**Miraglio** è un'app Android per arcieri che **stima la distanza del bersaglio con la
+fotocamera del telefono** (modello pinhole + calibrazione focale), permette di
+**verificare la misura camminando con il GPS** e di **salvare i luoghi** (foto +
+misura + coordinate), condivisibili come pin Google Maps, QR code o foto georeferenziata.
 
-> **📖 Manuale d'uso (italiano):** [MANUALE.md](MANUALE.md) — calibrazione per il massimo della precisione, limiti per dispositivo, zoom e modalità d'uso.
-
----
-
-## Features
-
-### Distance Estimation (LINEE mode — the app opens here)
-- **Pinch to zoom** on the live view, frame the target and shoot a frozen frame
-- **Automatic detection** (YOLOv8n ONNX): lines snap onto paglione/3D target by themselves
-- **Manual refine**: tap to reselect, left strip pans both lines, right strip spreads them; distance recalculates live
-- **Known height**: free input in cm (no presets); zoom multiplies the effective focal automatically
-
-### Ballistics (internal)
-- **Ballistic Engine**: Numerical integration of arrow trajectory with drag; computes compensated distance and sight mark for each measurement
-- **Pitch Compensation**: Corrects distance for uphill/downhill shots using device inclinometer
-- Note: the app focuses on distance measurement; bow profiles and sight tapes are managed internally with a default profile
-
-### Focal Calibration
-- Theoretical focal (diagonal FOV 67°) out of the box
-- Multi-point camera calibration: photograph a known target at a known distance, place H/V lines with loupe magnifier → fx/fy computed as mean of points
-- All distance modes (AUTO/TAP/LINEE) use the calibrated focal automatically
-
-### OCR & Utilities
-- **License Plate OCR**: ML Kit Text Recognition to read target numbers / license plates
-- **GPS Coordinates**: FusedLocationProvider for logging shot positions
-- **Local Database**: Room (profiles, measurements, calibration history, plates)
+> **📖 Manuale d'uso (italiano):** [MANUALE.md](MANUALE.md) — calibrazione per il massimo
+> della precisione, limiti per dispositivo, zoom e modalità d'uso.
 
 ---
 
-## Tech Stack
+## Funzionalità
 
-| Layer | Technology |
+### Misura con la fotocamera (modalità LINEE — è la schermata iniziale)
+- **Pizzica per zoomare** sul bersaglio, premi **Scatta fermo immagine**
+- **Due linee** (verde/blu) sui bordi del bersaglio: tap per riselezionare,
+  striscia a **sinistra** per spostarle, a **destra** per allargarle/stringerle;
+  la distanza si ricalcola in tempo reale
+- **Altezza nota libera in cm** (nessun preset); lo **zoom compensa** la focale
+  automaticamente
+- Linee **orizzontali** = altezza (fy), **verticali** = larghezza (fx), con
+  bottone per scambiare l'asse
+- Modalità **ALTEZZA**: da distanza nota calcola la dimensione reale tra le linee
+- **Inclinometro**: la distanza orizzontale è compensata con l'angolo di tiro (cos θ)
+
+### Riconoscimento bersagli (opzionale, YOLOv8n ONNX)
+- Modello **`yolov8n_hybrid.onnx`** inclusa in `app/src/main/assets/models/`
+- Classi: **paglione** (bersaglio circolare, default 130 cm) e **Targa 3D**
+  (rettangolare, default 80 cm) con preset di dimensione
+- Allo scatto i bersagli vengono riquadrati in verde e **le linee si agganciano
+  da sole** agli estremi del bersaglio più grande
+- **Spento di default** (Impostazioni → *Riconoscimento paglione*): il modello
+  ONNX è lazy e non viene caricato in memoria se non serve; riconoscimento una
+  sola volta al fermo immagine, zero inferenza sull'anteprima
+
+### Verifica distanza (GPS)
+- **Partenza → cammina → arrivo**: distanza con Haversine, distanza a piedi
+  cumulata, accuratezza dei fix mostrata in tempo reale
+- **Errore stimato** (accuratezze dei due fix combinate in quadratura); oltre 5 m
+  di incertezza l'app chiede conferma prima di chiudere la misura
+- La misura in corso **sopravvive alla morte del processo** e il GPS resta attivo
+  in background per **10 minuti** il tempo di raggiungere il punto finale
+
+### Calibrazione focale
+- Focale **teorica** (FOV diagonale 67°) finché non si calibra: utile come prima
+  prova, può sbagliare anche del 30%
+- **Calibrazione multipunto per lente**: fotografa un bersaglio di dimensione e
+  distanza note, posiziona le linee H/V con la lente d'ingrandimento → fx/fy come
+  media dei punti
+- **Ogni obiettivo** (1x, ultra-grandangolo, tele…) ha la **propria calibrazione**;
+  una lente non calibrata ripiega sulla lente principale
+- Le misure usano la focale calibrata **automaticamente**, zoom compreso
+
+### Luoghi e condivisione
+- **Salva** lo scatto (foto + misura + GPS + bersaglio stimato dalla bussola) o la
+  misura GPS a piedi
+- Elenco luoghi con **riepilogo, rinomina, eliminazione** e dettaglio completo
+- **Condivisione**: messaggio di testo con pin Google Maps (`https://maps.google.com/?q=lat,lon`,
+  tappabile da Android e iPhone), **QR code** del link o del messaggio (ZXing),
+  foto con banda di testo e **GPS nei metadati EXIF**
+- Archivio **interamente offline**: foto JPEG + indice `index.json` nei file
+  interni dell'app, nessun database e nessun server
+
+### Sensori e consumi
+- **Bussola**: direzione di mira in gradi dal nord vero, con etichetta N/NE/E/…
+- **Risparmio energetico**: in background sensori e GPS si spengono (tranne la
+  finestra di grazia della misura GPS); tutto riparte al rientro in primo piano
+
+---
+
+## Schermate
+
+L'app si apre sulla schermata di **misura**; dal menu (☰) si raggiungono le altre:
+
+| Schermata | Percorso |
+|-----------|----------|
+| Misura (LINEE) | iniziale |
+| Verifica distanza | menu → *Verifica distanza* |
+| Luoghi memorizzati | menu → *Luoghi memorizzati* |
+| Dettaglio luogo | da elenco luoghi |
+| Calibrazione focale | menu → *Calibrazione* |
+| Impostazioni | menu → *Impostazioni* |
+
+---
+
+## Stack tecnico
+
+| Layer | Tecnologia |
 |-------|------------|
-| UI | Jetpack Compose (Material 3), Navigation, PreviewView (CameraX) |
+| UI | Jetpack Compose (Material 3, chiaro/scuro), Navigation Compose, PreviewView (CameraX) |
 | DI | Hilt |
-| Persistence | Room + DataStore (preferences) |
-| Camera | CameraX (ImageAnalysis + Preview) |
-| ML / Vision | ML Kit Text Recognition, ONNX Runtime (YOLO) |
-| Ballistics | Custom Kotlin engine (numerical integration + Newton-Raphson) |
-| Build | Gradle (Kotlin DSL), libs.versions.toml |
-| Min SDK | 26 (Android 8.0) |
-| Target SDK | 34 |
+| Persistenza | SharedPreferences (calibrazione, impostazioni) + indice JSON dei luoghi + SavedStateHandle |
+| Camera | CameraX 1.4 (ImageAnalysis + Preview), lenti multiple, zoom digitale |
+| ML / Vision | ONNX Runtime (YOLOv8n), ML Kit Text Recognition |
+| QR / Condivisione | ZXing (solo generazione), FileProvider, ExifInterface (GPS) |
+| GPS / Sensori | LocationManager (GPS + network), accelerometro/giroscopio, bussola |
+| Build | Gradle (Kotlin DSL), libs.versions.toml, AGP 8.7.3, Kotlin 2.1.0 |
+| Min SDK | 26 (Android 8.0) — Target/Compile SDK 35 |
 
 ---
 
-## Project Structure
+## Struttura del progetto
 
 ```
 app/src/main/java/com/miraglio/
 ├── data/
-│   ├── dao/              # Room DAOs
-│   ├── database/         # AppDatabase, entities
-│   ├── repository/       # Repository implementations
-│   └── vision/           # NoOpObjectDetector (placeholder)
+│   ├── camera/        # CameraService, MiraglioAnalyzer (fotogramma latest), BitmapConverter
+│   ├── focal/         # FocalCalibrationStore (punti fx/fy per lente)
+│   ├── location/      # LocationTracker (GPS + network)
+│   ├── ocr/           # OcrTextRecognizer (ML Kit) — vedi nota sotto
+│   ├── places/        # PlacesRepository (foto + index.json), PlaceRecord
+│   ├── sensor/        # Compass, Inclinometer
+│   ├── session/       # ShotVerificationStore (stima vs misura)
+│   ├── settings/      # AppSettingsStore (riconoscimento on/off)
+│   ├── share/         # QrCodeRenderer (ZXing), ShareImageComposer (banda + EXIF GPS)
+│   └── vision/        # YoloObjectDetector (ONNX), NoOpObjectDetector
 ├── domain/
-│   ├── ballistic/        # BallisticEngine, models
-│   ├── model/            # Domain entities (BowProfile, Measurement, etc.)
-│   ├── repository/       # Repository interfaces
-│   └── vision/           # ObjectDetector interface
-├── di/                   # Hilt modules (CameraModule, VisionModule, etc.)
-├── ui/
-│   ├── home/             # HomeScreen (live, field check, focal status)
-│   ├── capture/          # CaptureScreen, CaptureViewModel (AUTO/TAP/LINEE/MANUAL)
-│   ├── measurement/      # Post-shot measurement flow
-│   ├── calibration/      # Focal calibration (fx/fy points)
-│   ├── focal/            # Focal capture (H/V lines + loupe)
-│   └── ocr/              # License plate OCR screen
-└── util/                 # Camera helpers, etc.
+│   ├── camera/        # PinholeDistanceEstimator (d = K·f/pixel)
+│   ├── location/      # GpsFix, Haversine, TargetEstimator (bersaglio stimato)
+│   ├── share/         # ShareMessageComposer (messaggi con pin Maps)
+│   └── vision/        # ObjectDetector, DetectionBox, TargetScorer
+├── di/                # Moduli Hilt (VisionModule)
+├── power/             # BackgroundPowerController (sensori/GPS in background)
+└── ui/
+    ├── capture/       # Schermata misura (fermo immagine + linee + gesture)
+    ├── measurement/   # Verifica distanza a piedi (GPS)
+    ├── calibration/   # Elenco calibrazioni
+    ├── focal/         # Scatto punti di calibrazione (linee + lente d'ingrandimento)
+    ├── places/        # Elenco + dettaglio luogo, barra Salva/Condividi/QR
+    ├── settings/      # Impostazioni
+    ├── navigation/    # NavHost (Capture, Measurement, Places, Calibration, …)
+    └── theme/         # Tema Material 3 (verde/arancio, chiaro/scuro)
+
+app/src/main/assets/models/yolov8n_hybrid.onnx   # modello di riconoscimento (~12 MB)
 ```
 
 ---
 
-## Current Status (v1.0.1)
+## Stato corrente (v1.0.1, versionCode 2)
 
-| Feature | Status |
-|---------|--------|
-| TAP distance (pinhole model, width) | ✅ Working (uses calibrated focal if present) |
-| LINEE mode (frozen frame + horizontal lines, height) | ✅ Implemented (device test pending) |
-| Focal calibration (multi-point, H/V lines + loupe) | ✅ Implemented (device test pending) |
-| Manual distance entry | ✅ Working |
-| AUTO detection (YOLOv8n hybrid) | ✅ Integrated (ONNX in assets) |
-| Ballistic engine (sight mark per measurement) | ✅ Working |
-| License plate OCR | ✅ Working (ML Kit) |
-| GPS logging | ✅ Working |
-| Build / Install | ✅ Successful (versionCode 2, versionName 1.0.1) |
+| Funzione | Stato |
+|----------|-------|
+| Misura LINEE (fermo immagine + linee + gesture) | ✅ Funzionante |
+| Riconoscimento bersagli YOLOv8n (ONNX incluso) | ✅ Integrato (opt-in, test dispositivo in corso) |
+| Calibrazione focale multipunto per lente | ✅ Funzionante |
+| Compensazione inclinazione (distanza orizzontale) | ✅ Funzionante |
+| Verifica distanza GPS (partenza→arrivo, errore stimato) | ✅ Funzionante |
+| Luoghi: salva/elenca/rinomina/elimina | ✅ Funzionante |
+| Condivisione: messaggio + pin Maps + QR + foto con EXIF GPS | ✅ Funzionante |
+| OCR testi (ML Kit) | ⚠️ Integrato ma **non attivo** sul flusso video attuale |
+| Test automatici | ❌ Assenti |
 
-> **Note on AUTO**: The `ObjectDetector` interface is defined and wired via Hilt, but the only implementation currently in the repo is `NoOpObjectDetector` (returns `DetectionResult(emptyList(), 0)`). YOLOv8m (ONNX) integration is the planned next step — the dependency (`onnxruntime-android`) is already declared in `gradle/libs.versions.toml`.
+Note oneste:
+- La precisione senza calibrazione focale può essere peggiore del 30%: la guida
+  completa in [MANUALE.md](MANUALE.md) spiega come calibrare.
+- I dati di calibrazione valgono solo sul dispositivo che li ha generati.
+- La distanza è soggetta al limite di 80 m del modello pinhole implementato.
 
 ---
 
-## Building
+## Compilazione
 
 ```bash
-# From project root
-./gradlew assembleDebug
+# Dalla root del progetto (serve Gradle 8.11+ installato, oppure Android Studio)
+gradle assembleDebug
 ```
 
 Output: `app/build/outputs/apk/debug/app-debug.apk`
 
-### Requirements
+> Gli script `gradlew`/`gradlew.bat` non sono inclusi nel repository: usa Gradle
+> installato localmente o genera il wrapper con `gradle wrapper`.
+
+### Requisiti
 - JDK 17+
-- Android SDK 34
-- `local.properties` with `sdk.dir` (auto-generated by Android Studio)
+- Android SDK 35
+- `local.properties` con `sdk.dir` (generato da Android Studio)
 
 ---
 
-## Installation (Development)
+## Installazione (sviluppo)
 
 ```bash
-# Via ADB (device must be authorized)
+# Via ADB (device autorizzato)
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 adb shell am start -n com.miraglio/.MainActivity
 ```
 
+In alternativa i script `send_apk.cmd` / `send_apk.ps1` inviano l'APK debug al
+telefono via [croc](https://getcroc.com) mostrando un QR code col link di ricezione.
+
 ---
 
-## Configuration
+## Permessi richiesti
 
-### Focal Length Calibration (required for TAP)
-1. Open **Capture** screen
-2. Tap the calibration button (top-right) or navigate to calibration flow
-3. Point at a target of **known width** at **known distance**
-4. The app computes and stores `focalLengthPx` per device
-
-### Focal Calibration Setup (recommended, one-time per device)
-1. Home → Calibrazione → **+**
-2. Frame a target of known size, freeze, place the H/V lines with the loupe
-3. Enter the known distance → save (⏎). Add 2-3 points for best precision
+- `CAMERA` — anteprima e misura
+- `ACCESS_FINE_LOCATION` / `ACCESS_COARSE_LOCATION` — posizione dello scatto, bersaglio stimato e verifica distanza
+- `VIBRATE` — feedback aptici
 
 ---
 
 ## Roadmap
 
-- [ ] Validate focal calibration against known distances (field test)
-- [ ] ONNX quantization (smaller APK, faster inference)
-- [ ] Dark theme polish
-- [ ] Unit / UI tests
+- [ ] Test automatici (unit/UI) sui calcoli di distanza e condivisione
+- [ ] Validazione sul campo della calibrazione contro distanze note
+- [ ] Quantizzazione del modello ONNX (APK più leggera, inferenza più rapida)
+- [ ] OCR dei testi dei bersagli: riattivare il riconoscimento sul fermo immagine
 
 ---
 
-## License
+## Licenza
 
-*To be decided by the author.*
+*Da decidere per l'autore.*
 
 ---
 
-## Credits
+## Crediti
 
 - **ONNX Runtime** — Microsoft
 - **ML Kit Text Recognition** — Google
-- **CameraX / Compose / Hilt / Room** — AndroidX / Google
-- Ballistic model inspired by standard exterior ballistics (drag-integrated trajectory)
-- **Training data**: synthetic images generated in-house + `archeryxpert-score-detection` dataset by Amrs Workspace ([Roboflow Universe](https://universe.roboflow.com/amrs-workspace-5ewyi/archeryxpert-score-detection)), licensed under **CC BY 4.0**
-- **Archery-Xpert/Score-Detection** (MIT) — methodology reference for target detection
-
----
-
-## Contact
-
-For questions, contributions, or publicity inquiries, open an issue or reach out via the repository.
+- **ZXing** — Google
+- **CameraX / Compose / Hilt** — AndroidX / Google
+- **Dati di addestramento** del modello YOLO: immagini sintetiche generate in-house +
+  dataset `archeryxpert-score-detection` di Amrs Workspace
+  ([Roboflow Universe](https://universe.roboflow.com/amrs-workspace-5ewyi/archeryxpert-score-detection),
+  licenza **CC BY 4.0**); metodologia di riferimento *Archery-Xpert/Score-Detection* (MIT)

@@ -22,6 +22,7 @@ import com.miraglio.data.places.PlacesRepository
 import com.miraglio.data.sensor.Compass
 import com.miraglio.data.sensor.Inclinometer
 import com.miraglio.data.session.ShotVerificationStore
+import com.miraglio.data.settings.AppSettingsStore
 import com.miraglio.data.share.ShareImageComposer
 import com.miraglio.domain.camera.CameraIntrinsics
 import com.miraglio.domain.camera.PinholeDistanceEstimator
@@ -138,6 +139,7 @@ class CaptureViewModel @Inject constructor(
     private val focalStore: FocalCalibrationStore,
     private val shotStore: ShotVerificationStore,
     private val placesRepository: PlacesRepository,
+    private val settings: AppSettingsStore,
     private val savedStateHandle: SavedStateHandle
 ) : ViewModel() {
 
@@ -176,6 +178,9 @@ class CaptureViewModel @Inject constructor(
     private val _lineeBoxes = MutableStateFlow<List<DetectionBox>>(emptyList())
     private val _liveSnap = MutableStateFlow<LiveSnap?>(null)
     val liveSnap: StateFlow<LiveSnap?> = _liveSnap.asStateFlow()
+
+    /** Bersagli rilevati sul fermo immagine; vuoti a riconoscimento spento. */
+    val detectionBoxes: StateFlow<List<DetectionBox>> = _lineeBoxes.asStateFlow()
 
     private val _measureDirection = MutableStateFlow(MeasureDirection.DISTANZA)
     private val _measureDistanceInput = MutableStateFlow("")
@@ -295,6 +300,17 @@ class CaptureViewModel @Inject constructor(
     val measureDirection: StateFlow<MeasureDirection> = _measureDirection.asStateFlow()
 
     val measureDistanceInput: StateFlow<String> = _measureDistanceInput.asStateFlow()
+
+    /**
+     * Modalita' outdoor: il tema (colori e dimensione dei testi) della UI.
+     * Serve qui solo per far vedere lo stato del bottone nella barra in alto:
+     * la preferenza vive in AppSettingsStore e la legge MainActivity.
+     */
+    val outdoorMode: StateFlow<Boolean> = settings.outdoorModeEnabled
+
+    fun toggleOutdoorMode() {
+        settings.setOutdoorModeEnabled(!settings.outdoorModeEnabled.value)
+    }
 
     fun toggleLineOrientation() {
         _lineOrientation.value = if (_lineOrientation.value == LineOrientation.HORIZONTAL) {
@@ -439,6 +455,12 @@ class CaptureViewModel @Inject constructor(
         val distanceInput: String
     )
 
+    /** Linee centrate con apertura di default: nessun bersaglio riconosciuto. */
+    private fun centerFreeLines() {
+        _lineTopNorm.value = 0.5f - DEFAULT_FREE_LINE_GAP / 2f
+        _lineBottomNorm.value = 0.5f + DEFAULT_FREE_LINE_GAP / 2f
+    }
+
     fun freezeFrame() {
         freezeShotSensors()
         _frozenBitmap.value = analyzer.getLatestBitmap()
@@ -504,10 +526,11 @@ class CaptureViewModel @Inject constructor(
         )
     }
 
-    /** Contenuto del QR: pin del bersaglio stimato, altrimenti pin dello scatto. */
+    /** Contenuto del QR: pin del bersaglio stimato, altrimenti pin dello
+     *  scatto; senza alcun fix si codifica il messaggio di condivisione. */
     fun cameraQrContent(): String? {
-        val fix = cameraTargetFix() ?: _frozenGpsFix.value ?: return null
-        return ShareMessageComposer.mapsLink(fix)
+        val fix = cameraTargetFix() ?: _frozenGpsFix.value
+        return fix?.let { ShareMessageComposer.mapsLink(it) } ?: cameraShareMessage()
     }
 
     /**
@@ -592,43 +615,43 @@ class CaptureViewModel @Inject constructor(
                 _lineBottomNorm.value = snap.box.right.coerceIn(0f, 1f)
             }
         } else {
-            _lineTopNorm.value = 0.5f - DEFAULT_FREE_LINE_GAP / 2f
-            _lineBottomNorm.value = 0.5f + DEFAULT_FREE_LINE_GAP / 2f
+            centerFreeLines()
         }
         analyzeFrozenLines()
     }
 
-    /** Riesegue il rilevamento sul fermo immagine corrente e aggancia le linee al miglior box. */
+    /**
+     * Rilevamento sul fermo immagine e aggancio delle linee al bersaglio piu'
+     * grande inquadrato. Gira solo con "Riconoscimento paglione" acceso:
+     * spento, non compare nessun riquadro e le linee restano quelle di sempre.
+     */
     fun analyzeFrozenLines() {
         val bmp = _frozenBitmap.value ?: return
         _lineFrameHeightPx.value = bmp.height
         _lineFrameWidthPx.value = bmp.width
+        if (!settings.recognitionEnabled.value) {
+            _lineeBoxes.value = emptyList()
+            centerFreeLines()
+            return
+        }
         viewModelScope.launch(Dispatchers.Default) {
             val result = runCatching { detector.detect(bmp) }.getOrNull() ?: return@launch
-            // Nessun filtro di classe: aggancia il miglior box qualunque sia (paglione o targa)
+            // Nessun filtro di classe: vince il bersaglio piu' grande
+            // inquadrato, paglione o targa che sia.
             val boxes = result.detections
             _lineeBoxes.value = boxes
-            val best = TargetScorer.bestTarget(
-                boxes,
-                bmp.width,
-                bmp.height,
-                preferredLabels = listOf(
-                    TargetClass.PAGLIONE.visionLabel,
-                    TargetClass.TARGA.visionLabel
-                )
-            )
+            val best = TargetScorer.largest(boxes)
             if (best != null) {
                 if (_lineOrientation.value == LineOrientation.HORIZONTAL) {
-                    _lineTopNorm.value = best.box.top.coerceIn(0f, 1f)
-                    _lineBottomNorm.value = best.box.bottom.coerceIn(0f, 1f)
+                    _lineTopNorm.value = best.top.coerceIn(0f, 1f)
+                    _lineBottomNorm.value = best.bottom.coerceIn(0f, 1f)
                 } else {
-                    _lineTopNorm.value = best.box.left.coerceIn(0f, 1f)
-                    _lineBottomNorm.value = best.box.right.coerceIn(0f, 1f)
+                    _lineTopNorm.value = best.left.coerceIn(0f, 1f)
+                    _lineBottomNorm.value = best.right.coerceIn(0f, 1f)
                 }
             } else {
                 // Nessun rilevamento: linee centrate sulla crocetta (centro immagine)
-                _lineTopNorm.value = 0.5f - DEFAULT_FREE_LINE_GAP / 2f
-                _lineBottomNorm.value = 0.5f + DEFAULT_FREE_LINE_GAP / 2f
+                centerFreeLines()
             }
         }
     }
@@ -737,10 +760,10 @@ class CaptureViewModel @Inject constructor(
         }
     }
 
+    // Nessun detector: l'analizzatore fornisce solo il fotogramma. Il
+    // riconoscimento gira al fermo immagine, dentro analyzeFrozenLines().
     private val analyzer = MiraglioAnalyzer(
-        detector = detector,
-        ocrRecognizer = ocrRecognizer,
-        scope = viewModelScope
+        ocrRecognizer = ocrRecognizer
     )
 
     fun bindCamera(
@@ -888,9 +911,12 @@ class CaptureViewModel @Inject constructor(
             if (bmp != null) {
                 _frozenBitmap.value = bmp
                 // Rilevamento solo per riarmare lo snap ai tap: qui NON si
-                // sovrascrivono le linee (analyzeFrozenLines lo farebbe).
-                runCatching { detector.detect(bmp) }.getOrNull()?.let { res ->
-                    _lineeBoxes.value = res.detections
+                // sovrascrivono le linee (analyzeFrozenLines lo farebbe), e a
+                // riconoscimento spento non si tocca affatto il modello.
+                if (settings.recognitionEnabled.value) {
+                    runCatching { detector.detect(bmp) }.getOrNull()?.let { res ->
+                        _lineeBoxes.value = res.detections
+                    }
                 }
             } else {
                 saveStateHandleFailsafeNull()

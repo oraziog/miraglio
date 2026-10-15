@@ -60,12 +60,18 @@ $File = (Resolve-Path $File).Path
 # ---- 3. Codice e link ----
 $code = "miraglio-$((Get-Random -Minimum 1000 -Maximum 9999))"
 $link = "https://getcroc.com/?code=$code"
-$sizeMB = [math]::Round((Get-Item $File).Length / 1MB, 1)
+# Info del file: nome, dimensione e data di modifica, per riconoscere a
+# colpo d'occhio quale build si sta inviando.
+$info = Get-Item $File
+$sizeMB = [math]::Round($info.Length / 1MB, 1)
+$dataOra = $info.LastWriteTime.ToString("dd/MM/yyyy HH:mm", [System.Globalization.CultureInfo]::InvariantCulture)
 
 Write-Host ""
-Write-Host "File:   $File" -ForegroundColor Cyan
-Write-Host "Dimensione: $sizeMB MB" -ForegroundColor Cyan
-Write-Host "Codice: $code" -ForegroundColor Cyan
+Write-Host "Nome:       $($info.Name)" -ForegroundColor Cyan
+Write-Host "Dimensione: $sizeMB MB ($($info.Length) byte)" -ForegroundColor Cyan
+Write-Host "Data:       $dataOra" -ForegroundColor Cyan
+Write-Host "Percorso:   $($info.FullName)" -ForegroundColor DarkGray
+Write-Host "Codice:     $code" -ForegroundColor Cyan
 Write-Host ""
 
 # ---- 4. QR del link di ricezione (si apre da solo) ----

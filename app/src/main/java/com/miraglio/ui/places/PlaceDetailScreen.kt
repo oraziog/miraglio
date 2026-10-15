@@ -5,6 +5,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -23,6 +24,7 @@ import androidx.compose.material.icons.filled.Navigation
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -34,6 +36,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -41,7 +44,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -50,8 +52,13 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.compose.material3.ExperimentalMaterial3Api
 import com.miraglio.data.places.PlaceKind
+import com.miraglio.data.share.QrCodeRenderer
 import com.miraglio.domain.share.ShareMessageComposer
+import com.miraglio.ui.theme.OnPanel
+import com.miraglio.ui.theme.PanelContainer
 import java.util.Locale
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -158,7 +165,7 @@ fun PlaceDetailScreen(
             }
 
             // Dati della misura
-            Card(colors = CardDefaults.cardColors(containerColor = Color(0xB3FFFFFF))) {
+            Card(colors = CardDefaults.cardColors(containerColor = PanelContainer)) {
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -173,6 +180,9 @@ fun PlaceDetailScreen(
                     }
                     record.walkedM?.let {
                         DetailRow("Percorso a piedi", String.format(Locale.US, "%.1f m", it))
+                    }
+                    record.gpsErrorM?.let {
+                        DetailRow("Errore stimato", String.format(Locale.US, "±%.1f m", it))
                     }
                     record.measuredSizeM?.let {
                         DetailRow("Bersaglio", String.format(Locale.US, "%.2f m", it))
@@ -214,14 +224,20 @@ fun PlaceDetailScreen(
                 }
             }
 
-            // Azioni principali
+            // Azioni principali. Padding orizzontale ridotto + testo su una
+            // sola riga: con il padding di default (24.dp per lato) "Naviga"
+            // e "Condividi" andavano a capo ("Navi\nga").
             Row(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 modifier = Modifier.fillMaxWidth()
             ) {
+                val buttonPadding = PaddingValues(horizontal = 8.dp, vertical = 10.dp)
+                // Stesso ordine di preferenza del pin QR: qualsiasi fix
+                // presente su questo luogo basta per navigarci sopra.
                 val navFix = record.targetFix
                     ?: record.endFix
                     ?: record.shotFix
+                    ?: record.startFix
                 FilledTonalButton(
                     onClick = {
                         navFix?.let {
@@ -231,10 +247,15 @@ fun PlaceDetailScreen(
                         }
                     },
                     enabled = navFix != null,
+                    contentPadding = buttonPadding,
                     modifier = Modifier.weight(1f)
                 ) {
                     Icon(Icons.Default.Navigation, contentDescription = null)
-                    Text("  Naviga")
+                    Text(
+                        "Naviga",
+                        maxLines = 1,
+                        softWrap = false
+                    )
                 }
                 FilledTonalButton(
                     onClick = {
@@ -249,23 +270,37 @@ fun PlaceDetailScreen(
                         }
                     },
                     enabled = state.shareMessage != null,
+                    contentPadding = buttonPadding,
                     modifier = Modifier.weight(1f)
                 ) {
-                    Text("Condividi")
+                    Text(
+                        "Condividi",
+                        maxLines = 1,
+                        softWrap = false
+                    )
                 }
                 FilledTonalButton(
                     onClick = { showQr = true },
                     enabled = state.qrContent != null,
+                    contentPadding = buttonPadding,
                     modifier = Modifier.weight(1f)
                 ) {
-                    Text("QR")
+                    Text(
+                        "QR",
+                        maxLines = 1,
+                        softWrap = false
+                    )
                 }
             }
 
-            // QR condivisibile
-            val qr = state.qrContent
-            if (showQr && qr != null) {
-                QrShareCard(qr)
+            // QR condivisibile: finestra modale. Il blocco inline compariva
+            // in fondo alla colonna, sotto la piega dello schermo, e il tocco
+            // sembrava non fare nulla.
+            if (showQr) {
+                QrDialog(
+                    content = state.qrContent,
+                    onDismiss = { showQr = false }
+                )
             }
         }
     }
@@ -304,41 +339,86 @@ private fun DetailRow(label: String, value: String) {
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
-        Text(label, style = MaterialTheme.typography.bodyMedium)
+        // La card ha sfondo bianco semitrasparente: il colore di tema
+        // ereditato era un grigio poco leggibile, come nella card di
+        // "Verifica distanza".
+        Text(label, style = MaterialTheme.typography.bodyMedium, color = OnPanel)
         Text(
             value,
             style = MaterialTheme.typography.bodyMedium,
-            fontWeight = FontWeight.Medium
+            fontWeight = FontWeight.Medium,
+            color = OnPanel
         )
     }
 }
 
+/**
+ * Finestra del QR, stessa esperienza della schermata di misura: QR grande,
+ * spinner durante la generazione, "Condividi QR" e una didascalia che dice
+ * cosa contiene (mappa oppure testo della misura, senza fix GPS).
+ */
 @Composable
-private fun QrShareCard(content: String) {
+private fun QrDialog(
+    content: String?,
+    onDismiss: () -> Unit
+) {
     val context = LocalContext.current
     var qrBitmap by remember(content) { mutableStateOf<Bitmap?>(null) }
-    androidx.compose.runtime.LaunchedEffect(content) {
-        qrBitmap = com.miraglio.data.share.QrCodeRenderer.render(content, 512)
-    }
-    Card(colors = CardDefaults.cardColors(containerColor = Color(0xB3FFFFFF))) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            qrBitmap?.let {
-                Image(
-                    bitmap = it.asImageBitmap(),
-                    contentDescription = "QR della posizione",
-                    modifier = Modifier.size(240.dp)
-                )
-                TextButton(onClick = { QrShareHelper.shareQr(context, it) }) {
-                    Text("Condividi QR")
-                }
+    LaunchedEffect(content) {
+        qrBitmap = if (content == null) {
+            null
+        } else {
+            withContext(Dispatchers.Default) {
+                runCatching { QrCodeRenderer.render(content, 512) }.getOrNull()
             }
         }
     }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("QR del luogo", fontWeight = FontWeight.Bold) },
+        text = {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                val bmp = qrBitmap
+                when {
+                    bmp != null -> Image(
+                        bitmap = bmp.asImageBitmap(),
+                        contentDescription = "QR del luogo",
+                        modifier = Modifier.size(260.dp)
+                    )
+                    content == null -> Text(
+                        "Nessun contenuto da codificare",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    else -> CircularProgressIndicator(modifier = Modifier.size(48.dp))
+                }
+                if (content != null) {
+                    Text(
+                        text = if (content.startsWith("https://maps.google.com")) {
+                            "Inquadralo con la fotocamera per aprire la mappa " +
+                                "(funziona anche da iPhone)."
+                        } else {
+                            "Questo luogo non ha un fix GPS: il QR contiene " +
+                                "il testo della misura."
+                        },
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.padding(top = 12.dp)
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { qrBitmap?.let { QrShareHelper.shareQr(context, it) } },
+                enabled = qrBitmap != null
+            ) { Text("Condividi QR") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Chiudi") }
+        }
+    )
 }
 
 @Composable

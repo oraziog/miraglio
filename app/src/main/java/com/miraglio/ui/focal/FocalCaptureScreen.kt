@@ -50,6 +50,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
@@ -256,10 +257,13 @@ private fun FocalLinesOverlay(
     onMoveSecond: (Float) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    var panAcc by remember { mutableStateOf(0f) }
-    var spreadAcc by remember { mutableStateOf(0f) }
-    var firstAcc by remember { mutableStateOf(0f) }
-    var secondAcc by remember { mutableStateOf(0f) }
+    // mutableFloatStateOf (non mutableStateOf): questi accumulatori vengono
+    // riscritti a ogni evento di trascinamento, e lo stato float specializzato
+    // evita un'allocazione di boxing per ogni scrittura.
+    var panAcc by remember { mutableFloatStateOf(0f) }
+    var spreadAcc by remember { mutableFloatStateOf(0f) }
+    var firstAcc by remember { mutableFloatStateOf(0f) }
+    var secondAcc by remember { mutableFloatStateOf(0f) }
     LaunchedEffect(lineA, lineB) {
         panAcc = 0f
         spreadAcc = 0f

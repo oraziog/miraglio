@@ -11,6 +11,13 @@ import kotlin.math.abs
  */
 object ShareMessageComposer {
 
+    /**
+     * Soglia di tolleranza della verifica (stima app vs misura GPS): oltre
+     * questa incertezza la precisione va dichiarata anche a chi riceve il
+     * messaggio, non solo a chi misura.
+     */
+    const val PRECISION_WARNING_METERS = 3f
+
     /** Link Google Maps (pin) per una posizione. */
     fun mapsLink(fix: GpsFix): String =
         String.format(Locale.US, "https://maps.google.com/?q=%.6f,%.6f", fix.latitudeDeg, fix.longitudeDeg)
@@ -53,14 +60,36 @@ object ShareMessageComposer {
     /**
      * Messaggio per una misura GPS percorsa a piedi (partenza -> arrivo).
      * Se manca il fix di partenza il pin viene omesso (avviso a monte).
+     *
+     * [distanceErrorM] e' l'errore stimato sulla distanza (accuratezze dei
+     * due fix combinate in quadratura). Viene sempre scritto accanto alla
+     * distanza: la misura resta valida anche con errore elevato, ma chi la
+     * riceve deve sapere di quanto puo' sbagliare il numero.
      */
     fun gpsPlace(
         distanceM: Float,
         start: GpsFix?,
-        end: GpsFix
+        end: GpsFix,
+        distanceErrorM: Float? = null
     ): String = buildString {
         appendLine("📏 Misura GPS salvata con Miraglio")
-        appendLine(String.format(Locale.US, "Distanza: %.1f m", distanceM))
+        appendLine(
+            if (distanceErrorM != null && distanceErrorM > 0f) {
+                String.format(
+                    Locale.US,
+                    "Distanza: %.1f m (errore stimato ±%.1f m)",
+                    distanceM,
+                    distanceErrorM
+                )
+            } else {
+                String.format(Locale.US, "Distanza: %.1f m", distanceM)
+            }
+        )
+        if (distanceErrorM != null && distanceErrorM > PRECISION_WARNING_METERS) {
+            appendLine(
+                "⚠️ Precisione limitata: il valore può sbagliare di diversi metri."
+            )
+        }
         appendLine()
         appendLine(
             String.format(
