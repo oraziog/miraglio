@@ -111,6 +111,20 @@ misura + coordinate), condivisibili come pin Google Maps, QR code o foto georefe
 
 ---
 
+## Come calcola la distanza
+
+![Infografica: calcolo della distanza compensata — fisica del tiro in pendenza, CD = LoS × cos θ, regolazione del mirino](docs/img/infografica-distanza.jpg)
+
+La fotocamera misura la **linea di vista** (LoS) verso il bersaglio, l'inclinometro
+dà l'angolo θ e l'app riporta la misura sulla **distanza orizzontale**:
+`CD = LoS × cos θ`, quello che in schermata leggi come *Distanza compensata*.
+A 30° di pendenza il coseno vale 0,87, cioè la distanza grezza sbaglia del 13%:
+è l'errore che fa credere di dover correggere il mirino. La parte sull'attrezzo
+è riferimento generale, non una funzione dell'app — Miraglio misura la distanza,
+il mirino lo regoli tu. Il ragionamento completo è in [MANUALE.md](MANUALE.md).
+
+---
+
 ## Schermate
 
 L'app si apre sulla schermata di **misura**; dal menu (☰) si raggiungono le altre:
