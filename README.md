@@ -390,3 +390,130 @@ Il software è fornito "così com'è", senza garanzie.
   dataset `archeryxpert-score-detection` di Amrs Workspace
   ([Roboflow Universe](https://universe.roboflow.com/amrs-workspace-5ewyi/archeryxpert-score-detection),
   licenza **CC BY 4.0**); metodologia di riferimento *Archery-Xpert/Score-Detection* (MIT)
+
+---
+
+# English
+
+> This is a short English summary of the project. The full documentation is in
+> Italian, in the sections above.
+
+## What it is
+
+**Estimating target distance with the phone camera — for archers.**
+
+Miraglio is an Android app that estimates how far a target is from a photo
+(pinhole model plus per-lens focal calibration), lets you verify that estimate
+by walking the distance with GPS, and saves places — photo, measurement and
+coordinates — that you can share as a Google Maps pin, a QR code or a
+geotagged photo.
+
+Written in Kotlin with Jetpack Compose, **Android 8.0+ only, no iPhone**. The
+app interface is in **Italian**.
+
+## What it does
+
+- **Measure with the camera (LINES mode).** Pinch to zoom on the target, freeze
+  the frame, then put two lines on the target edges: the distance is recomputed
+  live while you drag them. You type the real height in cm (no presets) and the
+  app compensates the lens zoom by itself.
+- **Tilt compensation.** The camera measures the line of sight, the inclinometer
+  gives the angle θ and the app reports the **horizontal** distance,
+  `CD = LoS × cos θ`, shown on screen as the *compensated distance*. At 30° of
+  slope the cosine is 0.87, so the raw line-of-sight distance is off by 13%: it
+  is what makes you think your sight needs adjusting.
+- **Optional target recognition (YOLOv8n, ONNX).** A model ships inside the APK;
+  it is off by default, runs once on the frozen frame and snaps the lines to the
+  target outline.
+- **GPS distance check.** Start, walk, arrive: Haversine distance, walked path
+  and fix accuracy in real time; the measurement survives the process being
+  killed for 15 minutes and the GPS stays on in the background for 10.
+- **Places.** Save a shot (photo + measurement + coordinates + target estimated
+  from the compass), then list, rename or delete it. The archive is completely
+  offline: JPEG files plus an `index.json` in the app's internal storage, no
+  database and no server.
+- **Sharing.** A text message with a Google Maps pin, a QR code, or a photo with
+  a caption band and the coordinates in the EXIF metadata.
+- **Self-updating.** At startup the app quietly asks GitHub Releases whether a
+  newer version exists; the APK is downloaded only when you ask for it, and
+  Android always confirms the install. The APK is signed with the same key, so
+  updating keeps places, photos and calibrations.
+- **Invite another archer.** A Settings card generates the QR code and the link
+  to the latest release, either as a message or as an image.
+
+## What it does NOT do
+
+Honesty, because reading it here beats finding out in the field:
+
+- It does **not** set your sight. Miraglio measures the distance; the pin,
+  elevation and sight marks are yours to adjust. (The infographic above is in
+  Italian.)
+- It does **not** work without focal calibration: without it the estimate can be
+  off by **more than 30%**.
+- It does **not** measure beyond **80 m** — the limit of the pinhole model
+  implemented.
+- It does **not** read the text printed on targets: the ML Kit OCR code is in
+  the project, but no screen calls it.
+- It does **not** run on iOS.
+- It is **not** on the Play Store: releases are published on GitHub.
+- It does **not** install anything by itself, and it does **not** send anything
+  anywhere: no account, no telemetry, no server.
+
+## Install
+
+Download `miraglio-<version>.apk` from the
+[latest release](https://github.com/oraziog/miraglio/releases/latest) **on the
+phone**, not on a computer. Android asks twice: allow *install unknown apps*
+for the app you opened the file from, then tap **Install**. A Play Protect
+warning is normal for apps that do not come from the Play Store. The step by
+step guide is [INSTALLAZIONE.md](INSTALLAZIONE.md), in Italian.
+
+## Quick start
+
+1. Install the APK as above and grant the camera permission.
+2. **Calibrate first.** A tape measure and five minutes: without calibration the
+   distance can be off by more than 30%. The app calibrates each lens
+   separately, and the values stay on that phone.
+3. Open the app: it starts on the measure screen. Pinch to zoom, freeze the
+   frame, drag the two lines onto the target and read the distance.
+
+## Privacy
+
+- **Permissions:** camera, location (only while measuring or saving a place),
+  vibrate, and network access used **only** to ask GitHub whether a newer
+  version exists.
+- **Nothing is uploaded.** Places, photos and calibrations stay in the app's
+  internal storage on the phone.
+- **`REQUEST_INSTALL_PACKAGES`** exists so the downloaded APK can be handed to
+  Android's own installer: the app never installs anything silently.
+
+## Build from source
+
+Requires JDK 17+, Android SDK 35 and a `local.properties` pointing at the SDK:
+
+```bash
+git clone https://github.com/oraziog/miraglio.git
+cd miraglio
+./gradlew assembleDebug     # debug APK
+./gradlew check             # tests + lint (lint warnings are errors)
+```
+
+Output: `app/build/outputs/apk/debug/app-debug.apk`. The release APK is signed
+with a dedicated key kept **outside** the repository: without
+`keystore.properties` the build produces an `app-release-unsigned.apk` that
+will not install.
+
+## License
+
+MIT. See [LICENSE](LICENSE).
+
+## Credits
+
+- **ONNX Runtime** — Microsoft
+- **ML Kit Text Recognition** — Google (a dependency, not wired to any screen)
+- **ZXing** — Google
+- **CameraX / Compose / Hilt** — AndroidX / Google
+- **YOLO training data**: synthetic images generated in-house plus the
+  `archeryxpert-score-detection` dataset by Amrs Workspace
+  ([Roboflow Universe](https://universe.roboflow.com/amrs-workspace-5ewyi/archeryxpert-score-detection),
+  **CC BY 4.0**); reference methodology *Archery-Xpert/Score-Detection* (MIT)
