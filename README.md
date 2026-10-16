@@ -354,7 +354,11 @@ adb install -r app/build/outputs/apk/release/app-release.apk
 
 ## Licenza
 
-*Da decidere per l'autore.*
+Rilasciato sotto licenza **MIT** — vedi [LICENSE](LICENSE).
+
+In breve: puoi usare, modificare e ridistribuire Miraglio (anche in prodotti
+chiusi) a patto di conservare la nota di copyright e il testo della licenza.
+Il software è fornito "così com'è", senza garanzie.
 
 ---
 
