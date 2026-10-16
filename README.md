@@ -168,7 +168,7 @@ app/src/main/java/com/miraglio/
 │   ├── camera/        # CameraService, MiraglioAnalyzer (fotogramma latest), BitmapConverter
 │   ├── focal/         # FocalCalibrationStore (punti fx/fy per lente)
 │   ├── location/      # LocationTracker (GPS + network)
-│   ├── ocr/           # OcrTextRecognizer (ML Kit) — vedi nota sotto
+│   ├── ocr/           # OcrTextRecognizer (ML Kit) — presente ma mai chiamato
 │   ├── places/        # PlacesRepository (foto + index.json), PlaceRecord
 │   ├── sensor/        # Compass, Inclinometer
 │   ├── session/       # ShotVerificationStore (stima vs misura)
@@ -215,9 +215,8 @@ docs/img/                                         # banner, infografica e icona 
 | Verifica distanza GPS (partenza→arrivo, errore stimato) | ✅ Funzionante |
 | Luoghi: salva/elenca/rinomina/elimina | ✅ Funzionante |
 | Condivisione: messaggio + pin Maps + QR + foto con EXIF GPS | ✅ Funzionante |
-| Aggiornamento dall'app (GitHub Releases) | ⚠️ Integrato, **da provare sul telefono** |
-| Invito installazione (QR/link per un altro arciere) | ⚠️ Integrato, **da provare sul telefono** |
-| OCR testi (ML Kit) | ⚠️ Integrato ma **non attivo** sul flusso video attuale |
+| Aggiornamento dall'app (GitHub Releases) | ✅ Funzionante — **provato sul telefono** |
+| Invito installazione (QR/link per un altro arciere) | ✅ Funzionante — **provato sul telefono** |
 | Test automatici | ✅ Coprono aggiornamento, invito installazione e regole di misura |
 
 Note oneste:
@@ -225,6 +224,9 @@ Note oneste:
   completa in [MANUALE.md](MANUALE.md) spiega come calibrare.
 - I dati di calibrazione valgono solo sul dispositivo che li ha generati.
 - La distanza è soggetta al limite di 80 m del modello pinhole implementato.
+- Il riconoscimento dei **testi** dei bersagli (ML Kit OCR) **non è usato**: il
+  codice e la dipendenza restano nel progetto, ma nessuna schermata lo chiama.
+  È in [Roadmap](#roadmap), non tra le funzioni.
 
 ---
 
@@ -362,7 +364,9 @@ adb install -r app/build/outputs/apk/release/app-release.apk
 - [ ] Test automatici (unit/UI) sui calcoli di distanza e condivisione
 - [ ] Validazione sul campo della calibrazione contro distanze note
 - [ ] Quantizzazione del modello ONNX (APK più leggera, inferenza più rapida)
-- [ ] OCR dei testi dei bersagli: riattivare il riconoscimento sul fermo immagine
+- [ ] OCR dei testi dei bersagli: collegare il riconoscitore ML Kit al fermo
+  immagine (oggi `recognize()` non viene mai chiamato), oppure togliere codice
+  e dipendenza
 
 ---
 
