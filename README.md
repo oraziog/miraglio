@@ -299,7 +299,7 @@ docs/img/                                         # banner, infografica e icona 
 
 ---
 
-## Stato corrente (v1.0.7, versionCode 8)
+## Stato corrente (v1.0.8, versionCode 9)
 
 | Funzione | Stato |
 |----------|-------|
@@ -410,21 +410,21 @@ a percorsi relativi: il corpo della release non è un file del repository, e un
 link relativo darebbe 404 proprio sulla pagina che deve installare l'app.
 
 1. Alza **`versionCode`** e **`versionName`** in [app/build.gradle.kts](app/build.gradle.kts)
-   (es. `versionCode = 8`, `versionName = "1.0.7"`).
+   (es. `versionCode = 9`, `versionName = "1.0.8"`).
 2. Committa e spingi il tag:
 
 ```bash
-git commit -am "Versione 1.0.7"
-git tag v1.0.7
-git push origin master v1.0.7
+git commit -am "Versione 1.0.8"
+git tag v1.0.8
+git push origin master v1.0.8
 ```
 
 3. GitHub Actions compila, firma e pubblica la release con l'APK e il suo
    **`.sha256`** allegati
    ([.github/workflows/release.yml](.github/workflows/release.yml)): si segue
    in *Actions* su GitHub. Il checksum è anche scritto nel corpo della release e
-   si verifica con `sha256sum -c miraglio-1.0.7.apk.sha256`.
-4. Al primo avvio dopo la pubblicazione l'app installata avvisa che c'è la 1.0.7.
+   si verifica con `sha256sum -c miraglio-1.0.8.apk.sha256`.
+4. Al primo avvio dopo la pubblicazione l'app installata avvisa che c'è la 1.0.8.
 
 ### Firma dell'APK
 

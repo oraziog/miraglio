@@ -15,6 +15,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -28,6 +29,7 @@ import com.miraglio.ui.i18n.LocalDisplayFormat
 import com.miraglio.ui.layout.AimLayout
 import com.miraglio.ui.theme.MiraglioTheme
 import java.util.Locale
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -152,6 +154,34 @@ class CalibrationPanelScreenshotTest {
     }
 
     /**
+     * I due campi devono stare **sopra** la tastiera, non solo esistere.
+     *
+     * Il PNG da solo direbbe "diverso", non "invisibile": chi rigenera le
+     * immagini di riferimento vedrebbe un pannello qualunque e lo approverebbe.
+     * Qui si controlla la geometria vera: il bordo inferiore di ciascun campo
+     * deve restare sopra la striscia della tastiera, ed entrambi devono avere
+     * un'area visibile (un campo spinto fuori dal padre ha altezza zero).
+     */
+    private fun assertCampiSopraLaTastiera(ime: Dp) {
+        val radice = composeRule.onRoot().fetchSemanticsNode().boundsInRoot
+        val tastiera = with(composeRule.density) { ime.toPx() }
+        val limite = radice.bottom - tastiera
+        listOf("Distanza (m)", "Altezza (cm)").forEach { etichetta ->
+            val area = composeRule.onNodeWithText(etichetta, substring = true)
+                .fetchSemanticsNode().boundsInRoot
+            assertTrue(
+                "$etichetta non ha area visibile: ${area.width} x ${area.height}",
+                area.width > 0f && area.height > 0f
+            )
+            assertTrue(
+                "$etichetta finisce a ${area.bottom} px, sotto la tastiera che " +
+                    "comincia a $limite px",
+                area.bottom <= limite + 1f
+            )
+        }
+    }
+
+    /**
      * Telefono in verticale con 300 dp di tastiera: il caso del difetto
      * originale. Nel PNG si devono leggere i due campi — "Distanza (m)" con 30
      * e "Altezza (cm)" con 130 — sopra la striscia nera.
@@ -160,6 +190,7 @@ class CalibrationPanelScreenshotTest {
     @Config(qualifiers = "it-rIT-w411dp-h891dp-mdpi")
     fun pannelloInVerticaleConTastiera() {
         disegna("calibration_panel_ime_portrait.png", landscape = false, ime = 300.dp)
+        assertCampiSopraLaTastiera(ime = 300.dp)
     }
 
     /**
@@ -172,5 +203,6 @@ class CalibrationPanelScreenshotTest {
     @Config(qualifiers = "it-rIT-w891dp-h411dp-land-mdpi")
     fun pannelloInOrizzontaleConTastiera() {
         disegna("calibration_panel_ime_landscape.png", landscape = true, ime = 250.dp)
+        assertCampiSopraLaTastiera(ime = 250.dp)
     }
 }
