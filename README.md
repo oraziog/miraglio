@@ -30,6 +30,17 @@ misura + coordinate), condivisibili come pin Google Maps, QR code o foto georefe
   bottone per scambiare l'asse
 - Modalità **ALTEZZA**: da distanza nota calcola la dimensione reale tra le linee
 - **Inclinometro**: la distanza orizzontale è compensata con l'angolo di tiro (cos θ)
+- **Blocco della rotazione** nella barra in alto — e sulla stessa preferenza in
+  **Impostazioni**: bloccata di default (in verticale il telefono non gira
+  mentre si mira), un tocco la libera e la scelta resta; vale solo dentro
+  Miraglio, non è un'impostazione di sistema
+- **Tacche di riferimento sul mirino** in **MOA** e in **pollici a 20 iarde**
+  (`in/20yd`, come sono tarati i mirini): scala sul bordo sinistro con lo zero al
+  centro, quanto vale una tacca e quanto copre il bersaglio (dimensione nota ×
+  distanza stimata). Il passo non è fisso — a 1x 1 MOA è 0,35 px — quindi si
+  allarga finché le tacche si vedono, e il valore è scritto accanto
+- **In orizzontale i pannelli passano accanto all'immagine** invece che sotto:
+  immagine a sinistra, risultato/linee e pulsanti a destra
 
 ### Riconoscimento bersagli (opzionale, YOLOv8n ONNX)
 - Modello **`yolov8n_hybrid.onnx`** inclusa in `app/src/main/assets/models/`
@@ -65,24 +76,88 @@ misura + coordinate), condivisibili come pin Google Maps, QR code o foto georefe
 - **Calibrazione multipunto per lente**: fotografa un bersaglio di dimensione e
   distanza note, posiziona le linee H/V con la lente d'ingrandimento → fx/fy come
   media dei punti
+- **Distanza dal GPS**: premi **Segna bersaglio** stando davanti all'oggetto e
+  **Distanza GPS** da dove miri — il campo si compila da solo con la distanza
+  fra i due punti e l'errore stimato (±), senza digitare nulla; il punto segnato
+  resta salvato fra le sessioni
 - **Ogni obiettivo** (1x, ultra-grandangolo, tele…) ha la **propria calibrazione**;
   una lente non calibrata ripiega sulla lente principale
+- **Gestione dei punti**: la card dice quale lente stai calibrando, elenca i punti
+  salvati lente per lente e li cancella con conferma — solo quelli della lente in
+  corso, o quelli di tutte le lenti
 - Le misure usano la focale calibrata **automaticamente**, zoom compreso
+- **Scambio fra due telefoni** ("Condividi o importa"): la calibrazione parte come
+  **testo** (messaggio, copia-incolla) o come **QR** da inquadrare. Prima di
+  scrivere, l'app mostra da **quale marca e modello** arriva, quanti punti sono e
+  su **quale lente** finiscono — le lenti si accoppiano per posizione, quelle che
+  qui non esistono si saltano invece di appoggiarsi a un'altra lente. Una somma
+  di controllo protegge il testo: un copia-incolla tagliato si rifiuta, non entra
+  in silenzio
+- Importare **sostituisce** la calibrazione di quella lente (sostituirsi è
+  l'unica cosa sensata: la media fra due telefoni non vale per nessuno dei due)
+- Dopo l'importazione la focale **si verifica misurando**: la prima misura di
+  prova su un bersaglio noto viene confrontata col numero arrivato dal file, e
+  oltre il **15%** di scarto l'app avvisa invece di lasciar credere che quei
+  valori valgano su questo telefono
 
 ### Luoghi e condivisione
 - **Salva** lo scatto (foto + misura + GPS + bersaglio stimato dalla bussola) o la
   misura GPS a piedi
 - Elenco luoghi con **riepilogo, rinomina, eliminazione** e dettaglio completo
+- **Note libere** sul luogo: oltre all'etichetta (che è solo un nome) un campo
+  note per quello che dopo una settimana non ricordi — facciata nord, zoom usato,
+  dubbi sulla distanza. Si salva con il pulsante e **non entra nella condivisione**
+- **Anteprima della nota** nell'elenco dei luoghi, sotto l'etichetta: quello che
+  si è scritto si rilegge senza aprire il dettaglio
+- **Coordinate copiate con un tap lungo** sul dettaglio o direttamente
+  nell'elenco: `lat, lon` (sei cifre, punto decimale, senza l'accuratezza)
+  finiscono negli appunti pronti da incollare in un'altra app
 - **Condivisione**: messaggio di testo con pin Google Maps (`https://maps.google.com/?q=lat,lon`,
   tappabile da Android e iPhone), **QR code** del link o del messaggio (ZXing),
   foto con banda di testo e **GPS nei metadati EXIF**
 - Archivio **interamente offline**: foto JPEG + indice `index.json` nei file
   interni dell'app, nessun database e nessun server
+- **Conferma con le mani**: quando il luogo (o un punto di calibrazione) è
+  davvero salvato il telefono dà un **tocco breve** — si sa che è andata bene
+  senza guardare lo schermo. Solo sull'esito positivo, e rispetta l'interruttore
+  di sistema del feedback tattile
 
 ### Sensori e consumi
 - **Bussola**: direzione di mira in gradi dal nord vero, con etichetta N/NE/E/…
 - **Risparmio energetico**: in background sensori e GPS si spengono (tranne la
   finestra di grazia della misura GPS); tutto riparte al rientro in primo piano
+
+### Lingua
+- La lingua si sceglie **dentro l'app**: *Impostazioni → Lingua*, con **Come il
+  telefono**, **Italiano**, **Español** o **Inglese**. Il cambio è immediato
+- Cambia **tutto**: etichette, messaggi composti dalle ViewModel, testo che si
+  condivide e anche **numeri e date** (virgola e `24/10/2026` in italiano, punto
+  e `Oct 24, 2026` in inglese, `20,5 m` e `24 oct 2026` in spagnolo)
+- Da Android 13 la stessa voce esiste anche in *Impostazioni → App → Miraglio →
+  Lingua*: le due sono **la stessa preferenza**, non due scelte da tenere allineate
+- Il ripiego resta l'inglese (`values/`): un telefono francese o tedesco che non
+  ha mai toccato questa voce si apre in inglese
+- Aggiungere una lingua è una cartella (`values-xx/`), una riga in
+  `AppLanguageChoice` e una in `xml/locales_config.xml`: `AppLanguageTest`
+  confronta le tre cose, e `StringsXmlTest` confronta **ogni** traduzione col
+  ripiego, anche quella aggiunta a metà
+
+### Unità di misura
+- Il sistema di unità si sceglie **dentro l'app**: *Impostazioni → Unità di
+  misura*, con **Metriche (m, cm)** o **Imperiali (yd, in, ft)**. Partenza:
+  metriche, quindi chi aggiorna non trova i numeri cambiati
+- È **indipendente dalla lingua**: un inglese può tirare in metri e un italiano a
+  un campo in iarde. Cambiare lingua non tocca le unità, e viceversa
+- Cambia **distanze** (iarde), **dimensioni dei bersagli** (pollici) e
+  **incertezza** (piedi): un bersaglio a 30 m diventa «33 yd», un paglione alto
+  1,22 m diventa «48 in», un'accuratezza GPS di ±5 m diventa «±16,4 ft»
+- Dentro l'app **non cambia niente**: distanze, dimensioni e focale restano in
+  metri e in pixel, quindi i luoghi salvati e le calibrazioni valgono identici
+  nei due sistemi, e il cambio è solo di scrittura
+- I campi dicono la loro unità e la seguono: «48» in pollici vale come «122» in
+  centimetri, e cambiando sistema mentre la schermata è aperta il numero già
+  scritto viene riscritto (`130` cm → `51,2` in): altrimenti la stessa cifra
+  letta come pollici sarebbe un bersaglio 2,54 volte più grande
 
 ### Aggiornamenti dall'app (GitHub Releases)
 - **Controllo silenzioso all'avvio** (senza rete non si vede niente) e voce
@@ -151,12 +226,14 @@ L'app si apre sulla schermata di **misura**; dal menu (☰) si raggiungono le al
 | ML / Vision | ONNX Runtime (YOLOv8n), ML Kit Text Recognition |
 | QR / Condivisione | ZXing (solo generazione), FileProvider, ExifInterface (GPS) |
 | GPS / Sensori | LocationManager (misure solo dal provider satellitare), accelerometro/giroscopio, bussola |
-| Formato display | Numeri con virgola decimale e date gg/mm/aaaa, ora di Roma, via `domain/format/ItalianFormat.kt` |
+| Formato display | Numeri, date e **lunghezze** nella lingua e nel sistema di unità scelti (`domain/format/DisplayFormat.kt`): virgola e gg/mm/aaaa in italiano, punto e *Oct 24, 2026* in inglese, `20,5 m` e *24 oct 2026* in spagnolo; metri e centimetri oppure iarde, pollici e piedi; ora sempre di Roma |
 | Build | Gradle (Kotlin DSL), libs.versions.toml, AGP 8.7.3, Kotlin 2.1.0 |
 | Min SDK | 26 (Android 8.0) — Target/Compile SDK 35 |
 | Aggiornamenti | GitHub Releases REST API (`HttpURLConnection` + `org.json`), FileProvider → installatore di sistema |
 | Release / CI | GitHub Actions (tag `v*.*.*` → APK firmato → release pubblicata) |
-| Test | JUnit 4 (JVM) sul confronto versioni |
+| Lingua | Si sceglie **dentro l'app** (Impostazioni → Lingua): come il telefono, italiano, spagnolo o inglese. Il ripiego è l'inglese (`values/`), le traduzioni stanno in `values-it/` e `values-es/`; `xml/locales_config.xml` dichiara le stesse lingue ad Android 13+. Cambio a caldo, senza riavviare l'app |
+| Unità di misura | Si sceglie **dentro l'app** (Impostazioni → Unità di misura), **indipendente dalla lingua**: metriche (m, cm) o imperiali (yd, in, ft). Dentro l'app si continua a contare in metri (`UnitSystem.kt` + `DisplayFormat.kt`): la conversione esiste solo dove si scrive e dove si legge un numero |
+| Test | JUnit 4 (JVM): confronto versioni, lettura release, invito, regole di misura, formattazione, parità delle traduzioni |
 
 ---
 
@@ -178,17 +255,20 @@ app/src/main/java/com/miraglio/
 │   └── vision/        # YoloObjectDetector (ONNX), NoOpObjectDetector
 ├── domain/
 │   ├── camera/        # PinholeDistanceEstimator (d = K·f/pixel)
+│   ├── format/        # DisplayFormat (numeri e date nella lingua scelta)
 │   ├── location/      # GpsFix, Haversine, TargetEstimator (bersaglio stimato)
 │   ├── share/         # ShareMessageComposer (messaggi con pin Maps)
 │   ├── update/        # AppVersion, ReleaseInfo, ReleaseNotes (taglia la guida), InstallInvite
 │   └── vision/        # ObjectDetector, DetectionBox, TargetScorer
-├── di/                # Moduli Hilt (VisionModule)
+├── di/                # Moduli Hilt (VisionModule, TextsModule)
+├── i18n/              # AppLanguage (lingua scelta + contesto localizzato), Texts + AndroidTexts
 ├── power/             # BackgroundPowerController (sensori/GPS in background)
 └── ui/
     ├── capture/       # Schermata misura (fermo immagine + linee + gesture)
     ├── measurement/   # Verifica distanza a piedi (GPS)
     ├── calibration/   # Elenco calibrazioni
     ├── focal/         # Scatto punti di calibrazione (linee + lente d'ingrandimento)
+    ├── i18n/          # LocalDisplayFormat (numeri e date nella lingua corrente, per Compose)
     ├── places/        # Elenco + dettaglio luogo, barra Salva/Condividi/QR
     ├── settings/      # Impostazioni
     ├── navigation/    # NavHost (Capture, Measurement, Places, Calibration, …)
@@ -197,14 +277,18 @@ app/src/main/java/com/miraglio/
 
 app/src/main/assets/models/yolov8n_hybrid.onnx   # modello di riconoscimento (~12 MB)
 app/src/main/res/drawable-nodpi/                  # icona dell'app (foto PNG, 432 px)
-app/src/test/java/com/miraglio/                   # test: aggiornamento, invito, regole di misura
+app/src/main/res/values/                          # stringhe in inglese (ripiego per ogni altra lingua)
+app/src/main/res/values-it/                       # traduzione italiana
+app/src/main/res/values-es/                       # traduzione spagnola
+app/src/main/res/xml/locales_config.xml           # lingue dichiarate al sistema e al selettore in-app
+app/src/test/java/com/miraglio/                   # test: aggiornamento, invito, regole di misura, lingua e formattazione
 docs/img/                                         # banner, infografica e icona usate nei documenti
 .github/workflows/release.yml                    # tag -> APK firmato -> release
 ```
 
 ---
 
-## Stato corrente (v1.0.3, versionCode 4)
+## Stato corrente (v1.0.4, versionCode 5)
 
 | Funzione | Stato |
 |----------|-------|
@@ -213,16 +297,27 @@ docs/img/                                         # banner, infografica e icona 
 | Calibrazione focale multipunto per lente | ✅ Funzionante |
 | Compensazione inclinazione (distanza orizzontale) | ✅ Funzionante |
 | Verifica distanza GPS (partenza→arrivo, errore stimato) | ✅ Funzionante |
-| Luoghi: salva/elenca/rinomina/elimina | ✅ Funzionante |
+| Luoghi: salva/elenca/rinomina/elimina, note libere, copia coordinate col tap lungo | ✅ Funzionante |
 | Condivisione: messaggio + pin Maps + QR + foto con EXIF GPS | ✅ Funzionante |
 | Aggiornamento dall'app (GitHub Releases) | ✅ Funzionante — **provato sul telefono** |
 | Invito installazione (QR/link per un altro arciere) | ✅ Funzionante — **provato sul telefono** |
-| Test automatici | ✅ Coprono aggiornamento, invito installazione e regole di misura |
+| Lingua (italiano / spagnolo / inglese) e formattazione coerente | ✅ Fatto — il selettore in-app (Impostazioni → Lingua) è nuovo: da provare sul telefono |
+| Unità di misura (metriche / imperiali) | ✅ Fatto — scelta in Impostazioni, indipendente dalla lingua: da provare sul telefono |
+| Blocco rotazione (barra in alto + Impostazioni, default: verticale) | ✅ Fatto — da provare sul telefono |
+| Pannelli accanto all'immagine in orizzontale (mira e misura) | ✅ Fatto — da provare sul telefono |
+| Tacche sul mirino in MOA e pollici a 20 iarde | ✅ Fatto — da provare sul telefono |
+| Scambio calibrazione fra due telefoni (testo o QR) | ✅ Fatto — da provare su due telefoni dello stesso modello |
+| Verifica della focale importata (bersaglio noto, scarto oltre il 15%) | ✅ Fatto — da provare sul telefono |
+| Conferma aptica dei salvataggi | ✅ Fatto — da provare sul telefono |
+| Test automatici | ✅ Coprono aggiornamento, invito installazione, regole di misura, formattazione e parità di ogni traduzione col ripiego |
 
 Note oneste:
 - La precisione senza calibrazione focale può essere peggiore del 30%: la guida
   completa in [MANUALE.md](MANUALE.md) spiega come calibrare.
-- I dati di calibrazione valgono solo sul dispositivo che li ha generati.
+- I dati di calibrazione valgono **per quel modello di telefono**: si possono
+  mandare a un altro telefono (testo o QR), ma su un modello diverso sono numeri
+  del telefono sbagliato — per questo l'app dice da dove arrivano **prima** di
+  importarli.
 - La distanza è soggetta al limite di 80 m del modello pinhole implementato.
 - Il riconoscimento dei **testi** dei bersagli (ML Kit OCR) **non è usato**: il
   codice e la dipendenza restano nel progetto, ma nessuna schermata lo chiama.
@@ -267,19 +362,19 @@ a percorsi relativi: il corpo della release non è un file del repository, e un
 link relativo darebbe 404 proprio sulla pagina che deve installare l'app.
 
 1. Alza **`versionCode`** e **`versionName`** in [app/build.gradle.kts](app/build.gradle.kts)
-   (es. `versionCode = 4`, `versionName = "1.0.3"`).
+   (es. `versionCode = 5`, `versionName = "1.0.4"`).
 2. Committa e spingi il tag:
 
 ```bash
-git commit -am "Versione 1.0.3"
-git tag v1.0.3
-git push origin master v1.0.3
+git commit -am "Versione 1.0.4"
+git tag v1.0.4
+git push origin master v1.0.4
 ```
 
 3. GitHub Actions compila, firma e pubblica la release con l'APK allegato
    ([.github/workflows/release.yml](.github/workflows/release.yml)): si segue
    in *Actions* su GitHub.
-4. Al primo avvio dopo la pubblicazione l'app installata avvisa che c'è la 1.0.3.
+4. Al primo avvio dopo la pubblicazione l'app installata avvisa che c'è la 1.0.4.
 
 ### Firma dell'APK
 
@@ -409,7 +504,14 @@ coordinates — that you can share as a Google Maps pin, a QR code or a
 geotagged photo.
 
 Written in Kotlin with Jetpack Compose, **Android 8.0+ only, no iPhone**. The
-app interface is in **Italian**.
+interface language is picked in the app itself (*Settings → Language*): Italian,
+Spanish or English, or the phone's language.
+
+Units are a **separate choice** from the language (*Settings → Measurement
+units*): metric (m, cm) or imperial (yd, in, ft). Distances, target sizes and
+GPS errors follow it — a target at 30 m reads "33 yd" — while everything stored
+and computed stays in metres, so saved places and calibrations are the same in
+both systems.
 
 ## What it does
 
@@ -417,6 +519,11 @@ app interface is in **Italian**.
   the frame, then put two lines on the target edges: the distance is recomputed
   live while you drag them. You type the real height in cm (no presets) and the
   app compensates the lens zoom by itself.
+- **Rotation lock.** Portrait by default, so the phone does not spin while you
+  aim: one tap in the top bar lets it rotate, and the choice sticks. It applies
+  only inside Miraglio, it is not a system setting.
+- **Hands-free confirmation.** Saving a place or a calibration point ends with a
+  short vibration, so you know it worked without looking at the screen.
 - **Tilt compensation.** The camera measures the line of sight, the inclinometer
   gives the angle θ and the app reports the **horizontal** distance,
   `CD = LoS × cos θ`, shown on screen as the *compensated distance*. At 30° of

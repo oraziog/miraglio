@@ -2,6 +2,8 @@ package com.miraglio.data.update
 
 import android.content.Context
 import android.util.Log
+import com.miraglio.R
+import com.miraglio.domain.update.UpdateFailure
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -65,7 +67,10 @@ class ApkDownloader @Inject constructor(
                             // meta' file. Meglio accorgersene qui che lasciare al
                             // sistema un APK che non si apre.
                             if (total != null && written != total) {
-                                error("Download incompleto ($written di $total byte)")
+                                throw UpdateFailure(
+                                    R.string.update_download_incomplete,
+                                    listOf(written, total)
+                                )
                             }
                         }
                     }
@@ -104,16 +109,18 @@ class ApkDownloader @Inject constructor(
                 307, 308 -> {
                     val next = connection.getHeaderField("Location")
                     connection.disconnect()
-                    if (next.isNullOrBlank()) error("Reindirizzamento senza destinazione (HTTP $code)")
+                    if (next.isNullOrBlank()) {
+                        throw UpdateFailure(R.string.update_redirect_without_target, listOf(code))
+                    }
                     current = next
                 }
                 else -> {
                     connection.disconnect()
-                    error("Download rifiutato (HTTP $code)")
+                    throw UpdateFailure(R.string.update_download_refused, listOf(code))
                 }
             }
         }
-        error("Troppi reindirizzamenti")
+        throw UpdateFailure(R.string.update_too_many_redirects)
     }
 
     companion object {

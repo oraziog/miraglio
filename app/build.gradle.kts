@@ -23,8 +23,8 @@ android {
         // la propria con l'etichetta della release piu' recente su GitHub e
         // propone l'aggiornamento solo se quella e' piu' alta. Etichetta e
         // versione vanno mantenute allineate (tag v1.0.2 = versionName 1.0.2).
-        versionCode = 4
-        versionName = "1.0.3"
+        versionCode = 5
+        versionName = "1.0.4"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -89,6 +89,18 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+        }
+    }
+
+    // Lingua scelta dentro l'app (Impostazioni -> Lingua, vedi AppLanguage).
+    // Un App Bundle, per default, spezza le risorse per lingua: chi scarica
+    // l'app riceve solo la lingua del telefono e una lingua scelta dopo non
+    // c'e' (servirebbe la libreria Play Core per scaricarla). Qui tutte le
+    // lingue restano dentro il modulo base, cosi' la scelta funziona anche se
+    // un giorno Miraglio uscisse come AAB e non come APK.
+    bundle {
+        language {
+            enableSplit = false
         }
     }
 

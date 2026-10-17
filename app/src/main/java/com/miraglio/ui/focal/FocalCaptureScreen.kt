@@ -13,18 +13,19 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
@@ -32,6 +33,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardReturn
+import androidx.compose.material.icons.filled.GpsFixed
+import androidx.compose.material.icons.filled.Place
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -62,7 +65,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
-import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.IntOffset
@@ -72,8 +75,10 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.LifecycleOwner
-import com.miraglio.domain.format.ItalianFormat
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.miraglio.R
 import com.miraglio.ui.capture.LineOrientation
+import com.miraglio.ui.i18n.LocalDisplayFormat
 import kotlin.math.abs
 import kotlin.math.min
 import kotlin.math.roundToInt
@@ -91,6 +96,14 @@ fun FocalCaptureScreen(
     val savedPoints by viewModel.savedPoints.collectAsState()
     val zoomRatio by viewModel.zoomRatio.collectAsState()
     val lensLabel by viewModel.lensLabel.collectAsState()
+    val verificationExpected by viewModel.verificationExpected.collectAsState()
+    // La focale attesa ha un valore per asse: si confronta con quello che si
+    // sta misurando adesso (linee orizzontali -> fy, verticali -> fx).
+    val verificationExpectedPx = if (state.orientation == LineOrientation.HORIZONTAL) {
+        verificationExpected?.second
+    } else {
+        verificationExpected?.first
+    }
 
     var hasPermission by remember {
         mutableStateOf(
@@ -108,13 +121,49 @@ fun FocalCaptureScreen(
         }
     }
 
+    // GPS per la distanza di calibrazione: il permesso si chiede al primo tocco
+    // di un pulsante GPS, e l'azione riparte appena il sistema ha risposto —
+    // anche se ha risposto no, perche' a spiegare cosa manca e' l'azione stessa.
+    var pendingGps by remember { mutableStateOf<(() -> Unit)?>(null) }
+    val locationLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { _ ->
+        val action = pendingGps
+        pendingGps = null
+        action?.invoke()
+    }
+    val runGps: (() -> Unit) -> Unit = { action ->
+        val granted = ContextCompat.checkSelfPermission(
+            context, Manifest.permission.ACCESS_FINE_LOCATION
+        ) == PackageManager.PERMISSION_GRANTED
+        if (granted) {
+            action()
+        } else {
+            pendingGps = action
+            locationLauncher.launch(
+                arrayOf(
+                    Manifest.permission.ACCESS_FINE_LOCATION,
+                    Manifest.permission.ACCESS_COARSE_LOCATION
+                )
+            )
+        }
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Calibrazione focale camera", fontWeight = FontWeight.Bold) },
+                title = {
+                    Text(
+                        stringResource(R.string.calibration_card_title),
+                        fontWeight = FontWeight.Bold
+                    )
+                },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Indietro")
+                        Icon(
+                            Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = stringResource(R.string.action_back)
+                        )
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -156,7 +205,7 @@ fun FocalCaptureScreen(
                     savedTotal = savedPoints.size + state.savedCount,
                     zoomRatio = zoomRatio,
                     lensLabel = lensLabel,
-                    onSizeChanged = viewModel::setSizeInputCm,
+                    onSizeChanged = viewModel::setSizeInput,
                     onDistanceChanged = viewModel::setDistanceInput,
                     onCapture = viewModel::freezeFrame,
                     onRetake = viewModel::unfreeze,
@@ -164,6 +213,9 @@ fun FocalCaptureScreen(
                     onZoomReset = viewModel::resetZoom,
                     onCycleLens = viewModel::cycleLens,
                     onToggleOrientation = viewModel::toggleOrientation,
+                    onMarkTarget = { runGps(viewModel::markTargetHere) },
+                    onGpsDistance = { runGps(viewModel::useGpsDistance) },
+                    verificationExpectedPx = verificationExpectedPx,
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 12.dp, vertical = 8.dp)
@@ -181,7 +233,7 @@ fun FocalCaptureScreen(
                 ) {
                     if (!hasPermission) {
                         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                            Text("Permesso camera richiesto")
+                            Text(stringResource(R.string.camera_permission_required))
                         }
                     } else {
                         FocalLivePreview(
@@ -198,7 +250,7 @@ fun FocalCaptureScreen(
                     savedTotal = savedPoints.size + state.savedCount,
                     zoomRatio = zoomRatio,
                     lensLabel = lensLabel,
-                    onSizeChanged = viewModel::setSizeInputCm,
+                    onSizeChanged = viewModel::setSizeInput,
                     onDistanceChanged = viewModel::setDistanceInput,
                     onCapture = viewModel::freezeFrame,
                     onRetake = viewModel::unfreeze,
@@ -206,6 +258,9 @@ fun FocalCaptureScreen(
                     onZoomReset = viewModel::resetZoom,
                     onCycleLens = viewModel::cycleLens,
                     onToggleOrientation = viewModel::toggleOrientation,
+                    onMarkTarget = { runGps(viewModel::markTargetHere) },
+                    onGpsDistance = { runGps(viewModel::useGpsDistance) },
+                    verificationExpectedPx = verificationExpectedPx,
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 12.dp, vertical = 8.dp)
@@ -265,9 +320,12 @@ private fun FocalLinesOverlay(
     var spreadAcc by remember { mutableFloatStateOf(0f) }
     var firstAcc by remember { mutableFloatStateOf(0f) }
     var secondAcc by remember { mutableFloatStateOf(0f) }
+    // Azzeramento in un posto solo: a inizio gesto, a fine gesto e su gesto
+    // ANNULLATO (secondo dito, gesto di sistema). Senza l'ultimo caso un gesto
+    // interrotto lascerebbe le linee disegnate a offset dal valore vero.
+    val resetDrag = { panAcc = 0f; spreadAcc = 0f; firstAcc = 0f; secondAcc = 0f }
     LaunchedEffect(lineA, lineB) {
-        panAcc = 0f
-        spreadAcc = 0f
+        resetDrag()
     }
     // Linee sempre presenti in mezzo al fotogramma: se lo stato non le fornisce,
     // si usa il centro. Niente filtri condizionali nel disegno.
@@ -306,14 +364,15 @@ private fun FocalLinesOverlay(
                     val px = 48.dp.toPx()
                     if (horizontal) {
                         detectVerticalDragGestures(
-                            onDragStart = { panAcc = 0f; spreadAcc = 0f; firstAcc = 0f; secondAcc = 0f },
+                            onDragStart = { resetDrag() },
                             onDragEnd = {
                                 if (firstAcc != 0f) onMoveFirst(firstAcc)
                                 else if (secondAcc != 0f) onMoveSecond(secondAcc)
                                 else if (spreadAcc != 0f) onSpreadCommit(spreadAcc)
                                 else if (panAcc != 0f) onPanCommit(panAcc)
-                                panAcc = 0f; spreadAcc = 0f; firstAcc = 0f; secondAcc = 0f
+                                resetDrag()
                             },
+                            onDragCancel = { resetDrag() },
                             onVerticalDrag = { change, dragAmount ->
                                 val dH = displayH
                                 if (dH <= 0f) return@detectVerticalDragGestures
@@ -331,14 +390,15 @@ private fun FocalLinesOverlay(
                         )
                     } else {
                         detectHorizontalDragGestures(
-                            onDragStart = { panAcc = 0f; spreadAcc = 0f; firstAcc = 0f; secondAcc = 0f },
+                            onDragStart = { resetDrag() },
                             onDragEnd = {
                                 if (firstAcc != 0f) onMoveFirst(firstAcc)
                                 else if (secondAcc != 0f) onMoveSecond(secondAcc)
                                 else if (spreadAcc != 0f) onSpreadCommit(spreadAcc)
                                 else if (panAcc != 0f) onPanCommit(panAcc)
-                                panAcc = 0f; spreadAcc = 0f; firstAcc = 0f; secondAcc = 0f
+                                resetDrag()
                             },
+                            onDragCancel = { resetDrag() },
                             onHorizontalDrag = { change, dragAmount ->
                                 val dW = displayW
                                 if (dW <= 0f) return@detectHorizontalDragGestures
@@ -420,6 +480,13 @@ private fun FocalLinesOverlay(
     }
 }
 
+/**
+ * Distanza dell'esempio nella calibrazione guidata: 30 m, che in sistema
+ * imperiale si scrive 33 yd. Sta qui e non nella risorsa perche' e' un numero,
+ * e i numeri li scrive il formattatore.
+ */
+private const val EXAMPLE_DISTANCE_M = 30f
+
 @Composable
 private fun FocalInputPanel(
     state: FocalCaptureUiState,
@@ -435,10 +502,16 @@ private fun FocalInputPanel(
     onZoomReset: () -> Unit,
     onCycleLens: () -> Unit,
     onToggleOrientation: () -> Unit,
+    onMarkTarget: () -> Unit,
+    onGpsDistance: () -> Unit,
+    verificationExpectedPx: Float?,
     modifier: Modifier = Modifier
 ) {
+    val format = LocalDisplayFormat.current
     val horizontal = state.orientation == LineOrientation.HORIZONTAL
-    val axisLabel = if (horizontal) "Altezza" else "Larghezza"
+    val axisLabel = stringResource(
+        if (horizontal) R.string.measure_height else R.string.measure_width
+    )
     val focalLabel = if (horizontal) "fy" else "fx"
 
     Card(
@@ -458,13 +531,18 @@ private fun FocalInputPanel(
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     FilledTonalButton(onClick = onCapture, modifier = Modifier.weight(1f)) {
-                        Text("Scatta fermo immagine")
+                        Text(stringResource(R.string.capture_freeze_frame))
                     }
                     lensLabel?.let {
                         TextButton(onClick = onCycleLens) { Text(it) }
                     }
                     TextButton(onClick = onZoomReset) {
-                        Text("${ItalianFormat.number(zoomRatio, 1)}x")
+                        Text(
+                            stringResource(
+                                R.string.zoom_level,
+                                format.number(zoomRatio, 1)
+                            )
+                        )
                     }
                 }
             } else {
@@ -475,7 +553,11 @@ private fun FocalInputPanel(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "Calibra: $focalLabel  ($axisLabel)",
+                        text = stringResource(
+                            R.string.focal_calibrate_axis,
+                            focalLabel,
+                            axisLabel
+                        ),
                         color = Color.White,
                         style = MaterialTheme.typography.labelLarge,
                         fontWeight = FontWeight.Bold,
@@ -483,8 +565,10 @@ private fun FocalInputPanel(
                     )
                     TextButton(onClick = onToggleOrientation) {
                         Text(
-                            if (horizontal) "↔ Passa a larghezza"
-                            else "↕ Passa ad altezza",
+                            stringResource(
+                                if (horizontal) R.string.focal_switch_to_width
+                                else R.string.focal_switch_to_height
+                            ),
                             color = Color(0xFFFFD54F)
                         )
                     }
@@ -499,22 +583,36 @@ private fun FocalInputPanel(
                     OutlinedTextField(
                         value = state.distanceInput,
                         onValueChange = onDistanceChanged,
-                        label = { Text("Distanza (m)") },
+                        label = {
+                            Text(
+                                stringResource(R.string.focal_distance_label, format.distanceUnit)
+                            )
+                        },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                         singleLine = true,
                         modifier = Modifier.weight(1f)
                     )
                     OutlinedTextField(
-                        value = state.sizeInputCm,
+                        value = state.sizeInput,
                         onValueChange = onSizeChanged,
-                        label = { Text("$axisLabel (cm)") },
+                        label = {
+                            Text(
+                                stringResource(
+                                    R.string.focal_axis_size_label,
+                                    axisLabel,
+                                    // L'unita' la decide il sistema scelto: il
+                                    // campo si chiama "(cm)" o "(in)".
+                                    format.sizeUnit
+                                )
+                            )
+                        },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                         singleLine = true,
                         modifier = Modifier.weight(1f)
                     )
                     IconButton(onClick = onSave) {        Icon(
             Icons.AutoMirrored.Filled.KeyboardReturn,
-                            contentDescription = "Salva punto",
+                            contentDescription = stringResource(R.string.focal_save_point),
                             tint = Color.White,
                             modifier = Modifier
                                 .background(
@@ -525,18 +623,25 @@ private fun FocalInputPanel(
                         )
                     }
                     TextButton(onClick = onRetake) {
-                        Text("Ripeti")
+                        Text(stringResource(R.string.focal_retake))
                     }
                 }
 
                 // Riga 3: pixel misurati, punti salvati, focale implicita a 1x.
                 val px = state.measuredPixels()
+                val pixelsLabel = stringResource(R.string.focal_pixels, px?.toInt() ?: "-")
+                val pointsLabel = stringResource(R.string.focal_points_saved, savedTotal)
+                val impliedLabel = impliedFocal?.let {
+                    stringResource(R.string.focal_implied_focal, focalLabel, it.toInt())
+                }
                 Text(
                     text = buildString {
-                        append("Pixel: ${px?.toInt() ?: "-"}")
-                        append("  \u2022  Punti: $savedTotal")
-                        if (impliedFocal != null) {
-                            append("  \u2022  $focalLabel \u2248 ${impliedFocal.toInt()} px (1\u00d7)")
+                        append(pixelsLabel)
+                        append("  \u2022  ")
+                        append(pointsLabel)
+                        if (impliedLabel != null) {
+                            append("  \u2022  ")
+                            append(impliedLabel)
                         }
                     },
                     style = MaterialTheme.typography.labelMedium,
@@ -544,10 +649,56 @@ private fun FocalInputPanel(
                 )
 
                 // Riga 4: esempio concreto del flusso distanza + altezza -> fy.
-                Text(                    text = "Esempio: paglione alto 130 cm a 30 m \u2192 linee orizzontali " + "sui bordi sup/inf \u2192 salva. Se ottieni fy \u2248 683 px e la " +
-                        "teorica era 400 px, la calibrazione \u00e8 1.6\u00d7 pi\u00f9 lunga.",
+                // I due numeri dell'esempio seguono le unita' scelte: senza, chi
+                // misura in iarde leggerebbe "130 cm a 30 m" sotto un campo che
+                // chiede i pollici.
+                Text(
+                    text = stringResource(
+                        R.string.focal_example,
+                        format.objectSizeSmall(FocalCaptureUiState.DEFAULT_KNOWN_SIZE_M, 0),
+                        format.distance(EXAMPLE_DISTANCE_M, 0)
+                    ),
                     style = MaterialTheme.typography.labelSmall,
                     color = Color(0xFFB0BEC5)
+                )
+            }
+
+            // Riga GPS in entrambi gli stati: si segna il bersaglio da fermi
+            // (davanti all'oggetto) e la distanza si usa col fermo immagine,
+            // mirando. Il messaggio sotto dice com'e' andata.
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                TextButton(onClick = onMarkTarget) {
+                    Icon(
+                        imageVector = Icons.Filled.Place,
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(stringResource(R.string.focal_gps_mark))
+                }
+                TextButton(onClick = onGpsDistance) {
+                    Icon(
+                        imageVector = Icons.Filled.GpsFixed,
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(stringResource(R.string.focal_gps_use))
+                }
+            }
+
+            // Dopo un'importazione la schermata dice cosa misurare e contro
+            // quale numero verra' confrontato: senza, la verifica sarebbe una
+            // regola nascosta.
+            verificationExpectedPx?.let {
+                Text(
+                    text = stringResource(R.string.focal_verify_hint, it.toInt()),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Color(0xFFFFD54F)
                 )
             }
 

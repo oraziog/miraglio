@@ -7,6 +7,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.NavType
 import androidx.navigation.navArgument
 import com.miraglio.ui.calibration.CalibrationScreen
+import com.miraglio.ui.calibration.CalibrationTransferScreen
 import com.miraglio.ui.capture.CaptureScreen
 import com.miraglio.ui.focal.FocalCaptureScreen
 import com.miraglio.ui.measurement.MeasurementScreen
@@ -45,7 +46,16 @@ fun MiraglioNavGraph(navController: NavHostController) {
         composable(Screen.Calibration.route) {
             CalibrationScreen(
                 onNavigateBack = { navController.popBackStack() },
-                onNavigateToFocalCapture = { navController.navigate(Screen.FocalCapture.route) }
+                onNavigateToFocalCapture = { navController.navigate(Screen.FocalCapture.route) },
+                onNavigateToTransfer = {
+                    navController.navigate(Screen.CalibrationTransfer.route)
+                }
+            )
+        }
+
+        composable(Screen.CalibrationTransfer.route) {
+            CalibrationTransferScreen(
+                onNavigateBack = { navController.popBackStack() }
             )
         }
 

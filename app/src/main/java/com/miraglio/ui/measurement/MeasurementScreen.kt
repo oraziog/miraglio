@@ -2,6 +2,7 @@ package com.miraglio.ui.measurement
 
 import android.Manifest
 import android.content.pm.PackageManager
+import android.content.res.Configuration
 import android.location.LocationManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -15,7 +16,9 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CheckCircle
@@ -46,16 +49,19 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.miraglio.R
 import com.miraglio.data.places.PlaceSaveState
-import com.miraglio.domain.format.ItalianFormat
 import com.miraglio.domain.location.MeasurementRules
+import com.miraglio.ui.i18n.LocalDisplayFormat
 import com.miraglio.ui.places.PlaceShareBar
 import com.miraglio.ui.places.ShareIntents
 import com.miraglio.ui.theme.LocalOutdoorMode
@@ -119,17 +125,22 @@ fun MeasurementScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Verifica distanza", fontWeight = FontWeight.Bold) },
+                title = {
+                    Text(stringResource(R.string.measurement_title), fontWeight = FontWeight.Bold)
+                },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Indietro")
+                        Icon(
+                            Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = stringResource(R.string.action_back)
+                        )
                     }
                 },
                 actions = {
                     IconButton(onClick = onNavigateToPlaces) {
                         Icon(
                             Icons.Default.Place,
-                            contentDescription = "Luoghi salvati",
+                            contentDescription = stringResource(R.string.action_saved_places),
                             tint = MaterialTheme.colorScheme.onPrimary
                         )
                     }
@@ -142,10 +153,16 @@ fun MeasurementScreen(
             )
         }
     ) { padding ->
+        // In orizzontale l'altezza e' poca: quello che non entra si raggiunge
+        // scorrendo, invece di restare fuori schermo senza modo di arrivarci.
+        // Gli avvisi (GPS spento, permesso) restano in cima, visibili subito.
+        val landscape = LocalConfiguration.current.orientation ==
+            Configuration.ORIENTATION_LANDSCAPE
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
+                .then(if (landscape) Modifier.verticalScroll(rememberScrollState()) else Modifier)
                 .padding(16.dp)
         ) {
             if (!uiState.gpsEnabled) {
@@ -218,7 +235,7 @@ private fun GpsWarningBanner() {
             )
             Spacer(modifier = Modifier.size(8.dp))
             Text(
-                "GPS disattivato. Attiva la posizione (GPS) per misurare.",
+                stringResource(R.string.measurement_gps_disabled),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onErrorContainer
             )
@@ -233,7 +250,7 @@ private fun PermissionPrompt() {
             Icon(Icons.Default.LocationOn, contentDescription = null, modifier = Modifier.size(48.dp))
             Spacer(modifier = Modifier.height(8.dp))
             Text(
-                "Servono i permessi di posizione per la misura",
+                stringResource(R.string.measurement_permission_needed),
                 style = MaterialTheme.typography.bodyMedium,
                 textAlign = TextAlign.Center
             )
@@ -249,10 +266,10 @@ private fun IdleContent(
     estimatedDistance: Float?,
     onStart: () -> Unit
 ) {
+    val format = LocalDisplayFormat.current
     Column(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.Center) {
         Text(
-            text = "Premi MISURA: la partenza si blocca sul fix del momento, " +
-                "poi spostati fino al punto finale",
+            text = stringResource(R.string.measurement_idle_hint),
             style = MaterialTheme.typography.bodyLarge,
             textAlign = TextAlign.Center,
             modifier = Modifier.fillMaxWidth()
@@ -260,7 +277,7 @@ private fun IdleContent(
         Spacer(modifier = Modifier.height(24.dp))
 
         BigActionButton(
-            text = "MISURA",
+            text = stringResource(R.string.measurement_start),
             containerColor = MaterialTheme.colorScheme.primary,
             onClick = onStart,
             enabled = gpsEnabled
@@ -268,16 +285,19 @@ private fun IdleContent(
         Spacer(modifier = Modifier.height(12.dp))
         Text(
             text = when {
-                !gpsEnabled -> "GPS assente"
+                !gpsEnabled -> stringResource(R.string.measurement_gps_missing)
                 // La partenza vuole un fix di adesso entro ±10 m: dirlo prima
                 // evita di armare la misura e restare fermi senza capire perche'.
-                fixReadyForStart ->
-                    "Fix GPS disponibile (±${ItalianFormat.meters(fixAccuracyM ?: 0f)})"
-                fixAccuracyM != null ->
-                    "Fix da migliorare: ora ±${ItalianFormat.meters(fixAccuracyM)} " +
-                        "(serve entro ±${ItalianFormat.meters(MeasurementRules.START_MAX_ACCURACY_M, 0)}), " +
-                        "all'aperto"
-                else -> "In attesa del primo fix satellitare (all'aperto)..."
+                fixReadyForStart -> stringResource(
+                    R.string.measurement_fix_ready,
+                    format.accuracy(fixAccuracyM ?: 0f)
+                )
+                fixAccuracyM != null -> stringResource(
+                    R.string.measurement_fix_improve,
+                    format.accuracy(fixAccuracyM),
+                    format.accuracy(MeasurementRules.START_MAX_ACCURACY_M, 0)
+                )
+                else -> stringResource(R.string.measurement_waiting_first_fix)
             },
             style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
@@ -287,7 +307,10 @@ private fun IdleContent(
         estimatedDistance?.let {
             Spacer(modifier = Modifier.height(16.dp))
             Text(
-                text = "Stima ultima distanza: ${ItalianFormat.meters(it, 2)}",
+                text = stringResource(
+                    R.string.measurement_last_estimate,
+                    format.distance(it, 2)
+                ),
                 style = MaterialTheme.typography.labelLarge,
                 textAlign = TextAlign.Center,
                 modifier = Modifier.fillMaxWidth()
@@ -312,6 +335,7 @@ private fun TrackingContent(
     onDismissFinishWarning: () -> Unit,
     onCancel: () -> Unit
 ) {
+    val format = LocalDisplayFormat.current
     // La chiusura e' stata chiesta, ma l'errore stimato sui due fix supera la
     // soglia: prima di registrare la distanza si chiede se vale la pena
     // aspettare un fix satellitare migliore.
@@ -319,20 +343,25 @@ private fun TrackingContent(
         AlertDialog(
             onDismissRequest = onDismissFinishWarning,
             icon = { Icon(Icons.Default.Warning, contentDescription = null) },
-            title = { Text("Errore della misura elevato") },
+            title = { Text(stringResource(R.string.measurement_high_error_title)) },
             text = {
                 Text(
-                    "L'errore della misura è maggiore di " +
-                        "${ItalianFormat.meters(MeasurementViewModel.FINISH_WARN_ERROR_METERS, 0)} " +
-                        "(stimato ±${ItalianFormat.meters(errorM)}). " +
-                        "Vuoi aspettare un fix dal satellite per un errore minore?"
+                    stringResource(
+                        R.string.measurement_high_error_message,
+                        format.accuracy(MeasurementViewModel.FINISH_WARN_ERROR_METERS, 0),
+                        format.accuracy(errorM)
+                    )
                 )
             },
             confirmButton = {
-                TextButton(onClick = onConfirmFinish) { Text("Continua") }
+                TextButton(onClick = onConfirmFinish) {
+                    Text(stringResource(R.string.measurement_continue))
+                }
             },
             dismissButton = {
-                TextButton(onClick = onDismissFinishWarning) { Text("Aspetta") }
+                TextButton(onClick = onDismissFinishWarning) {
+                    Text(stringResource(R.string.measurement_wait))
+                }
             }
         )
     }
@@ -340,9 +369,9 @@ private fun TrackingContent(
     Column(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.Center) {
         Text(
             text = if (waitingForFix) {
-                "In attesa del fix di partenza"
+                stringResource(R.string.measurement_waiting_start_fix)
             } else {
-                "Muoviti fino al paglione"
+                stringResource(R.string.measurement_walk_to_target)
             },
             style = MaterialTheme.typography.titleLarge,
             fontWeight = FontWeight.Bold,
@@ -352,11 +381,17 @@ private fun TrackingContent(
 
         if (waitingForFix) {
             Spacer(modifier = Modifier.height(8.dp))
+            val startMaxLabel = format.accuracy(MeasurementRules.START_MAX_ACCURACY_M, 0)
             Text(
-                text = "La partenza vuole un fix satellitare di adesso entro " +
-                    "±${ItalianFormat.meters(MeasurementRules.START_MAX_ACCURACY_M, 0)}" +
-                    (fixAccuracy?.let { " — ora ±${ItalianFormat.meters(it)}" } ?: "") +
-                    ". Resta in cielo aperto.",
+                text = if (fixAccuracy == null) {
+                    stringResource(R.string.measurement_start_fix_hint, startMaxLabel)
+                } else {
+                    stringResource(
+                        R.string.measurement_start_fix_hint_now,
+                        startMaxLabel,
+                        format.accuracy(fixAccuracy)
+                    )
+                },
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
                 textAlign = TextAlign.Center,
@@ -367,7 +402,7 @@ private fun TrackingContent(
         if (!waitingForFix) {
             Spacer(modifier = Modifier.height(16.dp))
             Text(
-                text = ItalianFormat.meters(distanceM),
+                text = format.distance(distanceM),
                 fontSize = 64.sp,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.primary,
@@ -376,7 +411,7 @@ private fun TrackingContent(
             )
             Spacer(modifier = Modifier.height(8.dp))
             Text(
-                text = "Percorso a piedi: ${ItalianFormat.meters(walkedM)}",
+                text = stringResource(R.string.measurement_walked, format.distance(walkedM)),
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
                 textAlign = TextAlign.Center,
@@ -398,7 +433,7 @@ private fun TrackingContent(
         Spacer(modifier = Modifier.height(32.dp))
 
         BigActionButton(
-            text = "FINO A QUI",
+            text = stringResource(R.string.measurement_finish),
             containerColor = MaterialTheme.colorScheme.tertiary,
             onClick = onFinish,
             // Si chiude solo con un fix di adesso: senza, la distanza sarebbe
@@ -423,7 +458,11 @@ private fun TrackingContent(
 
             Spacer(modifier = Modifier.height(8.dp))
             Text(
-                text = "Precisione GPS: ±${ItalianFormat.meters(accuracy)}${providerSuffix(fixProvider)}",
+                text = stringResource(
+                    R.string.measurement_gps_accuracy,
+                    format.accuracy(accuracy),
+                    providerSuffix(fixProvider)
+                ),
                 style = MaterialTheme.typography.labelSmall,
                 color = if (insufficient) {
                     alertedColor
@@ -438,13 +477,15 @@ private fun TrackingContent(
             if (insufficient) {
                 Text(
                     text = if (fixUsable) {
-                        "Fix scadente: con questa precisione la misura può " +
-                            "sbagliare di oltre ±${ItalianFormat.meters(GPS_ACCURACY_WARN_METERS, 0)}. " +
-                            "Attendi in cielo aperto."
+                        stringResource(
+                            R.string.measurement_poor_fix,
+                            format.accuracy(GPS_ACCURACY_WARN_METERS, 0)
+                        )
                     } else {
-                        "Fix vecchio o scadente: la misura si chiude solo con un " +
-                            "fix satellitare di adesso, entro " +
-                            "±${ItalianFormat.meters(MeasurementRules.TRACK_MAX_ACCURACY_M, 0)}."
+                        stringResource(
+                            R.string.measurement_stale_fix,
+                            format.accuracy(MeasurementRules.TRACK_MAX_ACCURACY_M, 0)
+                        )
                     },
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.error,
@@ -455,7 +496,7 @@ private fun TrackingContent(
         }
         Spacer(modifier = Modifier.height(12.dp))
         TextButton(onClick = onCancel, modifier = Modifier.align(Alignment.CenterHorizontally)) {
-            Text("Annulla")
+            Text(stringResource(R.string.action_cancel))
         }
     }
 }
@@ -473,6 +514,7 @@ private fun DoneContent(
     onSave: () -> Unit,
     onNewMeasurement: () -> Unit
 ) {
+    val format = LocalDisplayFormat.current
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -481,21 +523,21 @@ private fun DoneContent(
     ) {
         if (measuredDistanceM == null) {
             Text(
-                "Misura non disponibile",
+                stringResource(R.string.measurement_unavailable),
                 style = MaterialTheme.typography.titleMedium,
                 textAlign = TextAlign.Center,
                 modifier = Modifier.fillMaxWidth()
             )
         } else {
             Text(
-                "Distanza misurata",
+                stringResource(R.string.measurement_measured),
                 style = MaterialTheme.typography.titleLarge,
                 textAlign = TextAlign.Center,
                 modifier = Modifier.fillMaxWidth()
             )
             Spacer(modifier = Modifier.height(8.dp))
             Text(
-                text = ItalianFormat.meters(measuredDistanceM),
+                text = format.distance(measuredDistanceM),
                 fontSize = 64.sp,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.primary,
@@ -504,7 +546,7 @@ private fun DoneContent(
             )
             Spacer(modifier = Modifier.height(8.dp))
             Text(
-                text = "Percorso a piedi: ${ItalianFormat.meters(walkedM)}",
+                text = stringResource(R.string.measurement_walked, format.distance(walkedM)),
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
                 textAlign = TextAlign.Center,
@@ -518,7 +560,10 @@ private fun DoneContent(
                 val poorPrecision = errorM > TOLERANCE_METERS
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    text = "Errore stimato: ±${ItalianFormat.meters(errorM)}",
+                    text = stringResource(
+                        R.string.measurement_estimated_error,
+                        format.accuracy(errorM)
+                    ),
                     style = MaterialTheme.typography.labelLarge,
                     fontWeight = if (poorPrecision) FontWeight.Bold else FontWeight.Normal,
                     color = if (poorPrecision) {
@@ -531,7 +576,7 @@ private fun DoneContent(
                 )
                 if (poorPrecision) {
                     Text(
-                        text = "Precisione limitata: il valore può sbagliare di diversi metri.",
+                        text = stringResource(R.string.measurement_limited_precision),
                         style = MaterialTheme.typography.labelSmall,
                         color = OUT_OF_TOLERANCE_COLOR,
                         textAlign = TextAlign.Center,
@@ -568,12 +613,18 @@ private fun DoneContent(
                         // La card ha sfondo pastello chiaro: il content color
                         // ereditato era un grigio senza contrasto.
                         Text(
-                            text = "Stima dell'app: ${ItalianFormat.meters(estimated)}",
+                            text = stringResource(
+                                R.string.measurement_app_estimate,
+                                format.distance(estimated)
+                            ),
                             style = MaterialTheme.typography.bodyLarge,
                             color = OnPanel
                         )
                         Text(
-                            text = "Scarto: ${ItalianFormat.signed(delta)} m",
+                            text = stringResource(
+                                R.string.measurement_gap,
+                                format.signedDistance(delta)
+                            ),
                             style = MaterialTheme.typography.bodyLarge,
                             fontWeight = FontWeight.Medium,
                             color = OnPanel
@@ -587,11 +638,10 @@ private fun DoneContent(
                             )
                             Spacer(modifier = Modifier.size(6.dp))
                             Text(
-                                text = if (withinTolerance) {
-                                    "Entro ±3 m ✓"
-                                } else {
-                                    "Fuori da ±3 m ✗"
-                                },
+                                text = stringResource(
+                                    if (withinTolerance) R.string.measurement_within_tolerance
+                                    else R.string.measurement_outside_tolerance,                                     format.accuracy(TOLERANCE_METERS, 0)
+                                ),
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.Bold,
                                 color = if (withinTolerance) GPS_GOOD_FIX_COLOR else OUT_OF_TOLERANCE_COLOR
@@ -602,7 +652,7 @@ private fun DoneContent(
             } ?: run {
                 Spacer(modifier = Modifier.height(24.dp))
                 Text(
-                    text = "Usa prima Tiro Live per avere una stima da confrontare.",
+                    text = stringResource(R.string.measurement_use_live_aim),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
                     textAlign = TextAlign.Center,
@@ -625,7 +675,7 @@ private fun DoneContent(
 
         Spacer(modifier = Modifier.height(16.dp))
         BigActionButton(
-            text = "NUOVA MISURA",
+            text = stringResource(R.string.measurement_new),
             containerColor = MaterialTheme.colorScheme.primary,
             onClick = onNewMeasurement
         )
@@ -686,9 +736,16 @@ private val GPS_GOOD_FIX_COLOR: Color
 private val GPS_BAD_FIX_COLOR: Color
     @Composable get() = if (LocalOutdoorMode.current) OutdoorRed else Color(0xFFD32F2F)
 
-/** Origine del fix, per capire da dove viene l'accuratezza mostrata. */
+/**
+ * Origine del fix, per capire da dove viene l'accuratezza mostrata.
+ *
+ * E' `@Composable` perche' l'etichetta e' tradotta.
+ */
+@Composable
 private fun providerSuffix(provider: String?): String = when (provider) {
-    LocationManager.GPS_PROVIDER -> " (satellite)"
-    LocationManager.NETWORK_PROVIDER -> " (rete)"
+    // Lo spazio sta qui e non nella risorsa: AAPT toglie gli spazi ai bordi
+    // di un valore, quindi in un file di stringhe non sopravviverebbe.
+    LocationManager.GPS_PROVIDER -> " " + stringResource(R.string.measurement_provider_gps)
+    LocationManager.NETWORK_PROVIDER -> " " + stringResource(R.string.measurement_provider_network)
     else -> ""
 }

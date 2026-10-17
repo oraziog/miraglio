@@ -5,20 +5,27 @@ import android.os.SystemClock
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.miraglio.R
+import com.miraglio.data.feedback.SaveFeedback
+import com.miraglio.data.history.HistoryEntry
+import com.miraglio.data.history.MeasurementHistory
 import com.miraglio.data.location.LocationTracker
 import com.miraglio.data.places.PlaceKind
 import com.miraglio.data.places.PlaceRecord
 import com.miraglio.data.places.PlaceSaveState
 import com.miraglio.data.places.PlacesRepository
 import com.miraglio.data.session.ShotVerificationStore
-import com.miraglio.domain.format.ItalianFormat
 import com.miraglio.domain.location.GpsFix
 import com.miraglio.domain.location.Haversine
 import com.miraglio.domain.location.MeasurementRules
 import com.miraglio.domain.location.WalkFix
+import com.miraglio.domain.location.combinedFixError
 import com.miraglio.domain.share.ShareMessageComposer
+import com.miraglio.i18n.Texts
 import com.miraglio.power.BackgroundPowerController
 import dagger.hilt.android.lifecycle.HiltViewModel
+import javax.inject.Inject
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -26,8 +33,6 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.Dispatchers
-import javax.inject.Inject
 
 enum class MeasurementPhase { IDLE, TRACKING, DONE }
 
@@ -77,7 +82,10 @@ class MeasurementViewModel @Inject constructor(
     private val tracker: LocationTracker,
     private val store: ShotVerificationStore,
     private val placesRepository: PlacesRepository,
+    private val saveFeedback: SaveFeedback,
     private val powerController: BackgroundPowerController,
+    private val history: MeasurementHistory,
+    private val texts: Texts,
     private val savedStateHandle: SavedStateHandle
 ) : ViewModel() {
 
@@ -231,7 +239,7 @@ class MeasurementViewModel @Inject constructor(
             message = _message.value,
             finishWarningErrorM = finishWarning,
             shareMessage = if (finalDistance != null && endFix != null) {
-                ShareMessageComposer.gpsPlace(finalDistance, startFix, endFix, finalError)
+                ShareMessageComposer.gpsPlace(texts, finalDistance, startFix, endFix, finalError)
             } else {
                 null
             },
@@ -303,8 +311,10 @@ class MeasurementViewModel @Inject constructor(
                     MeasurementRules.isUsable(fix, now, MeasurementRules.TRACK_MAX_ACCURACY_M) -> {
                     lockStart(
                         location,
-                        warning = "Partenza con precisione ridotta: " +
-                            "±${ItalianFormat.meters(fix.accuracyM)}"
+                        warning = texts.get(
+                            R.string.measurement_start_reduced_accuracy,
+                            texts.format.accuracy(fix.accuracyM)
+                        )
                     )
                 }
                 else -> _candidate.value = null
@@ -479,12 +489,12 @@ class MeasurementViewModel @Inject constructor(
         if (_phase.value != MeasurementPhase.TRACKING) return
         val start = _start.value
         if (start == null) {
-            _message.value = "Attendi il fix di partenza: serve un fix satellitare (all'aperto)"
+            _message.value = texts.get(R.string.measurement_start_fix_needed)
             return
         }
         val end = validEndFix()
         if (end == null) {
-            _message.value = "Fix GPS non aggiornato: attendi qualche secondo in cielo aperto e riprova"
+            _message.value = texts.get(R.string.measurement_fix_stale)
             return
         }
         // Sotto la soglia si chiude subito; sopra si chiede conferma, perche'
@@ -504,7 +514,7 @@ class MeasurementViewModel @Inject constructor(
         val end = validEndFix()
         if (end == null) {
             _finishWarning.value = null
-            _message.value = "Fix GPS non aggiornato: attendi qualche secondo in cielo aperto e riprova"
+            _message.value = texts.get(R.string.measurement_fix_stale)
             return
         }
         _finishWarning.value = null
@@ -539,6 +549,27 @@ class MeasurementViewModel @Inject constructor(
         powerController.setMeasurementTracking(false)
         store.setMeasured(distance)
         tracker.stopLocationUpdates()
+        // Cronologia automatica: la misura e' compiuta e va in archivio da sola,
+        // indipendentemente dal pulsante "Salva" (che resta per i Luoghi).
+        val errorM = combinedFixError(
+            GpsFix.fromLocation(start).accuracyM,
+            GpsFix.fromLocation(end).accuracyM
+        )
+        val latitudine = end.latitude.toFloat()
+        val longitudine = end.longitude.toFloat()
+        viewModelScope.launch {
+            history.record(
+                HistoryEntry(
+                    id = history.newId(),
+                    atMs = System.currentTimeMillis(),
+                    kind = PlaceKind.GPS,
+                    distanceM = distance,
+                    errorM = errorM,
+                    latitudeDeg = latitudine,
+                    longitudeDeg = longitudine
+                )
+            )
+        }
     }
 
     fun reset() {
@@ -584,8 +615,19 @@ class MeasurementViewModel @Inject constructor(
                 endFix = end,
                 walkedM = walked
             )
-            placesRepository.save(PlaceKind.GPS, null, record)
-            _placeSaveState.value = PlaceSaveState.SAVED
+            val saved = placesRepository.save(PlaceKind.GPS, null, record)
+            // L'esito si guarda davvero: qui lo stato diventava SALVATO
+            // comunque, quindi un salvataggio rifiutato (foto non scrivibile,
+            // indice non salvabile) si presentava come riuscito — e adesso
+            // avrebbe fatto ronzare il telefono per niente.
+            if (saved != null) {
+                _placeSaveState.value = PlaceSaveState.SAVED
+                // Conferma con le mani: a fine camminata si guarda avanti, non
+                // il pannello.
+                saveFeedback.saved()
+            } else {
+                _placeSaveState.value = PlaceSaveState.FAILED
+            }
         }
     }
 

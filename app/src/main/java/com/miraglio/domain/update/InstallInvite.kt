@@ -1,11 +1,15 @@
 package com.miraglio.domain.update
 
+import com.miraglio.R
+import com.miraglio.i18n.Texts
+
 /**
  * Invito a installare Miraglio su un altro telefono: il link da inquadrare o da
  * mandare, e il messaggio che lo accompagna.
  *
  * Sta fuori dalla UI perche' e' logica pura: si prova con un test JVM, senza
- * telefono, come il confronto fra versioni.
+ * telefono, come il confronto fra versioni. Il messaggio arriva dalle risorse
+ * tradotte tramite [Texts], cosi' chi lo riceve lo legge nella propria lingua.
  */
 object InstallInvite {
 
@@ -27,17 +31,13 @@ object InstallInvite {
      * Non contiene il numero di versione: il link punta all'ultima release,
      * quindi il testo resta giusto anche fra sei mesi.
      */
-    fun message(repo: String): String = buildString {
-        appendLine("🏹 Prova Miraglio: stima la distanza del bersaglio con la " +
-            "fotocamera del telefono.")
+    fun message(texts: Texts, repo: String): String = buildString {
+        appendLine(texts.get(R.string.install_invite_intro))
         appendLine()
-        appendLine("Apri questo link dal telefono Android e installala:")
+        appendLine(texts.get(R.string.install_invite_open_link))
         appendLine(releasePageUrl(repo))
         appendLine()
-        appendLine("Android chiede due conferme — autorizza «installa app " +
-            "sconosciute» e poi premi Installa. È normale: Miraglio non è sul " +
-            "Play Store.")
-        appendLine("Al primo avvio fai la calibrazione, altrimenti la distanza " +
-            "può sbagliare anche del 30%.")
+        appendLine(texts.get(R.string.install_invite_android_confirms))
+        appendLine(texts.get(R.string.install_invite_calibrate))
     }
 }

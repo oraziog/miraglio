@@ -1,0 +1,352 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ITALIANO — una traduzione.
+
+  Un telefono in italiano prende questo file; qualunque altra lingua non
+  tradotta prende l'inglese di values/strings.xml. Le cartelle devono restare
+  allineate (stessi nomi, stessi segnaposto): lo controlla StringsXmlTest, che
+  confronta ogni traduzione con values/.
+-->
+<resources>
+    <string name="app_name">Miraglio</string>
+    <string name="app_title_version">Miraglio v%1$s</string>
+
+    <!-- Menu della schermata di mira -->
+    <string name="menu_open">Menu</string>
+    <string name="menu_how_to_use">Come si usa</string>
+
+    <!-- Azioni condivise da piu' schermate -->
+    <string name="action_back">Indietro</string>
+    <string name="action_cancel">Annulla</string>
+    <string name="action_close">Chiudi</string>
+    <string name="action_delete">Elimina</string>
+    <string name="action_download_install">Scarica e installa</string>
+    <string name="action_install">Installa</string>
+    <string name="action_postpone">Più tardi</string>
+    <string name="action_retry">Riprova</string>
+    <string name="action_saved_places">Luoghi salvati</string>
+    <string name="action_share">Condividi</string>
+    <string name="action_share_place_title">Condividi luogo</string>
+    <string name="action_share_qr_title">Condividi QR</string>
+
+    <!-- Impostazioni -->
+    <string name="settings_title">Impostazioni</string>
+    <!-- Lingua: i nomi delle lingue si traducono ("Italiano" qui, "Italian" in
+         values/): chi legge sta guardando l'interfaccia nella lingua in cui
+         l'ha messa, e la sua lingua la riconosce comunque. -->
+    <string name="settings_language_title">Lingua</string>
+    <string name="settings_language_description">I testi, i numeri e le date seguono questa scelta. “Come il telefono” usa la lingua di Android; da Android 13 puoi scegliere una lingua solo per Miraglio nelle impostazioni di sistema.</string>
+    <string name="settings_language_system">Come il telefono</string>
+    <string name="settings_language_italian">Italiano</string>
+    <string name="settings_language_spanish">Spagnolo</string>
+    <string name="settings_language_english">Inglese</string>
+    <!-- Unita' di misura: scelta a parte dalla lingua. Le sigle (m, cm, yd, in,
+         ft) non si traducono; il testo dice solo cosa cambia. -->
+    <string name="settings_units_title">Unità di misura</string>
+    <string name="settings_units_description">Distanze, dimensioni dei bersagli ed errori del GPS seguono questa scelta, da soli: la lingua che leggi non decide come misuri, e cambiare lingua non la tocca.</string>
+    <string name="settings_units_metric">Metriche (m, cm)</string>
+    <string name="settings_units_imperial">Imperiali (yd, in, ft)</string>
+    <string name="settings_outdoor_title">Modalità outdoor</string>
+    <string name="settings_outdoor_on">Attiva: sfondo nero, testi gialli e ingranditi, pannelli sopra l\'immagine in nero pieno. Si spegne anche dal bottone in alto nella schermata di mira.</string>
+    <string name="settings_outdoor_off">Spenta: colori normali. Attivala quando tiri all\'aperto, per leggere a colpo d\'occhio anche con il sole battente o gli occhiali da sole polarizzati.</string>
+    <string name="settings_rotation_title">Blocco rotazione</string>
+    <string name="settings_rotation_locked">Attivo: verticale, il telefono non gira mentre si mira. Si cambia anche dal bottone in alto nella schermata di mira.</string>
+    <string name="settings_rotation_free">Spento: lo schermo segue il telefono. Comodo in orizzontale, scomodo mentre si mira.</string>
+    <string name="settings_install_title">Installa su un altro telefono</string>
+    <string name="settings_install_description">Mostra il QR e il link della release: l\'altro arciere li apre dal suo telefono e installa Miraglio. Utile anche per te, se cambi telefono.</string>
+    <string name="settings_install_show">Mostra QR e link</string>
+    <string name="settings_install_qr_description">QR della release più recente</string>
+    <string name="settings_install_qr_hint">Inquadralo con il telefono dell\'altro arciere: si apre la pagina della release, con le istruzioni e l\'APK.</string>
+    <string name="settings_install_share_qr">Condividi il QR come immagine</string>
+    <string name="settings_install_share_title">Condividi invito</string>
+    <string name="settings_updates_title">Aggiornamenti</string>
+    <string name="settings_updates_installed">Versione installata: %1$s</string>
+    <string name="settings_updates_action_checking">Controllo in corso…</string>
+
+    <string name="settings_updates_action_cancel">Annulla download</string>
+    <string name="settings_updates_action_check">Controlla aggiornamenti</string>
+    <string name="settings_updates_status_idle">Non ancora controllato in questa sessione.</string>
+    <string name="settings_updates_status_checking">Chiedo a GitHub se c\'è una versione nuova…</string>
+    <string name="settings_updates_status_uptodate">Sei all\'ultima versione.</string>
+    <string name="settings_updates_status_available">Disponibile la versione %1$s.</string>
+    <string name="settings_updates_status_downloading">Sto scaricando la versione %1$s…</string>
+    <string name="settings_updates_status_ready">Versione %1$s scaricata, pronta da installare.</string>
+    <string name="settings_updates_status_permission">Prima concedi ad Android il permesso di installare app da Miraglio, poi premi Installa.</string>
+    <string name="settings_updates_status_failed">L\'aggiornamento non è riuscito: %1$s</string>
+    <string name="settings_updates_status_checkfailed">Controllo non riuscito: %1$s</string>
+    <string name="settings_recognition_title">Riconoscimento paglione</string>
+    <string name="settings_recognition_on">Attivo: quando scatti il fermo immagine i bersagli riconosciuti vengono riquadrati in verde e le linee orizzontali si posizionano da sole agli estremi del bersaglio più grande.</string>
+    <string name="settings_recognition_off">Spento: nessun riquadro e linee centrate, esattamente come sempre. Il modello di riconoscimento non viene caricato in memoria.</string>
+    <!-- Camera e misura (condivise fra le schermate di mira e di calibrazione) -->
+    <string name="camera_permission_required">Permesso camera richiesto</string>
+    <string name="measure_height">Altezza</string>
+    <string name="measure_width">Larghezza</string>
+    <string name="capture_freeze_frame">Scatta fermo immagine</string>
+    <string name="camera_request_permission">Richiedi permesso</string>
+    <string name="capture_outdoor_on">Attiva modalità outdoor (alto contrasto)</string>
+    <string name="capture_outdoor_off">Disattiva modalità outdoor</string>
+    <string name="capture_portrait_lock">Blocca la rotazione (verticale)</string>
+    <string name="capture_portrait_unlock">Consenti la rotazione</string>
+    <string name="reticle_scale_label">Ogni tacca = %1$s MOA = %2$s in/20yd</string>
+    <string name="reticle_target_label">Bersaglio = %1$s MOA = %2$s in/20yd</string>
+    <string name="capture_how_to_title">Come misurare?</string>
+    <string name="capture_how_to_body">1) Pizzica con due dita per zoomare sul bersaglio.\n\n2) Premi Scatta e rileva: le linee si agganciano da sole al bersaglio.\n\n3) Tocca per riselezionare, trascina a SX per spostare, a DX per allargare/stringere.\n\nScrivi l\'altezza nota del bersaglio: è essenziale per la precisione. Il campo dice in quale unità.</string>
+    <string name="capture_how_to_ok">Ho capito</string>
+    <string name="capture_frozen_lines">Fermo immagine linee</string>
+    <string name="capture_reset_lines">Azzera linee</string>
+    <string name="capture_live">Live</string>
+    <string name="capture_aim_hint">Inquadra il bersaglio, poi scatta fermo immagine</string>
+    <string name="capture_size_hint">Scatta e posiziona le linee sul bersaglio</string>
+    <string name="capture_distance">Distanza: %1$s</string>
+    <string name="capture_angle">Angolo: %1$s°</string>
+    <string name="capture_angle_suffix">Angolo: %1$s°</string>
+    <string name="capture_compensated">Distanza compensata: %1$s</string>
+    <string name="capture_shot_moved_warning">Telefono mosso da quando hai messo le linee: la distanza potrebbe essere imprecisa. Ricontrolla le linee.</string>
+    <string name="capture_direction">Direzione: %1$s (%2$s°)</string>
+    <string name="capture_known_height">Altezza nota (%1$s)</string>
+    <string name="capture_known_width">Larghezza nota (%1$s)</string>
+    <string name="capture_known_distance">Distanza nota (%1$s)</string>
+    <string name="capture_measure_distance">Misurazione distanza</string>
+    <string name="capture_measure_height">Misurazione altezza</string>
+    <string name="capture_switch_to_vertical">Passa a linee verticali</string>
+    <string name="capture_switch_to_horizontal">Passa a linee orizzontali</string>
+    <string name="capture_lines_vertical">→ Linee Verticali</string>
+    <string name="capture_lines_horizontal">→ Linee Orizzontali</string>
+    <string name="capture_enter_distance">Inserisci la distanza (%1$s)</string>
+    <string name="capture_place_lines">Posiziona le linee sui bordi dell\'oggetto</string>
+    <string name="capture_size_value">%1$s: %2$s</string>
+    <string name="zoom_level">%1$sx</string>
+
+    <!-- Luoghi -->
+    <string name="places_title">Luoghi memorizzati</string>
+    <string name="places_empty_title">Nessun luogo salvato</string>
+    <string name="places_empty_hint">Salva uno scatto da Tiro Live o una misura da Verifica distanza</string>
+    <string name="places_kind_gps">Misura GPS</string>
+    <string name="places_kind_shot">Scatto</string>
+    <string name="places_action_save">Salva</string>
+    <string name="places_action_saving">Salvo…</string>
+    <string name="places_action_saved">Salvato ✓</string>
+    <string name="places_action_qr">QR</string>
+    <string name="places_qr_dialog_title">Pin della posizione</string>
+    <string name="places_qr_content_description">QR della posizione</string>
+    <string name="places_qr_hint_map">Inquadralo per aprire la mappa (anche da iPhone).</string>
+    <string name="places_qr_hint_text">Nessun fix GPS: il QR contiene il testo della misura.</string>
+    <!-- Dettaglio di un luogo: etichette dei dati -->
+    <string name="detail_distance">Distanza</string>
+    <string name="detail_horizontal">Orizzontale</string>
+    <string name="detail_walked">Percorso a piedi</string>
+    <string name="detail_error">Errore stimato</string>
+    <string name="detail_target">Bersaglio</string>
+    <string name="detail_direction">Direzione</string>
+    <string name="detail_pitch">Inclinazione</string>
+    <string name="detail_start">Partenza</string>
+    <string name="detail_arrival">Arrivo</string>
+    <string name="detail_lens">Lente</string>
+    <string name="place_untitled">Luogo</string>
+    <string name="place_action_rename">Rinomina</string>
+    <string name="place_action_navigate">Naviga</string>
+
+    <!-- Dettaglio di un luogo -->
+    <string name="place_detail_unavailable">Luogo non disponibile</string>
+    <string name="place_detail_back_to_list">Torna alla lista</string>
+    <string name="place_detail_photo">Foto del luogo</string>
+    <string name="place_detail_gps_no_photo">Misura GPS senza foto</string>
+    <string name="place_detail_no_photo">Foto non disponibile</string>
+    <string name="place_detail_photo_removed">Il file della foto è stato rimosso</string>
+    <string name="place_delete_title">Eliminare il luogo?</string>
+    <string name="place_delete_message">Verranno rimossi la foto e i dati della misura.</string>
+    <string name="place_rename_title">Rinomina luogo</string>
+    <string name="place_qr_title">QR del luogo</string>
+    <string name="place_qr_no_content">Nessun contenuto da codificare</string>
+    <string name="place_detail_qr_hint_map">Inquadralo con la fotocamera per aprire la mappa (funziona anche da iPhone).</string>
+    <string name="place_detail_qr_hint_text">Questo luogo non ha un fix GPS: il QR contiene il testo della misura.</string>
+    <!-- Nota libera sul luogo e copia delle coordinate con il tap lungo -->
+    <string name="place_notes_title">Note</string>
+    <string name="place_notes_hint">Facciata nord, zoom 2x, dubbio sulla distanza…</string>
+    <string name="place_coordinates_hint">Tieni premuto su una riga di coordinate per copiarla.</string>
+    <string name="place_coordinates_copied">Coordinate copiate negli appunti</string>
+    <!-- Cronologia automatica delle ultime misure (MeasurementHistory) -->
+    <string name="history_title">Ultime misure</string>
+    <string name="history_clear">Cancella cronologia</string>
+    <string name="history_share_prefix">📏 Ultima misura di Miraglio</string>
+
+    <!-- Calibrazione focale -->
+    <string name="calibration_title">Calibrazione</string>
+    <string name="calibration_card_title">Calibrazione focale camera</string>
+    <string name="calibration_add_point">Aggiungi punto calibrazione</string>
+    <string name="calibration_add_point_count">Aggiungi punto calibrazione (%1$s)</string>
+    <string name="calibration_px">%1$s px</string>
+    <string name="calibration_px_theoretical">teorica %1$s px</string>
+    <string name="calibration_fx_fy">fx: %1$s — fy: %2$s</string>
+    <string name="calibration_explanation">Senza punti la focale è teorica (FOV diagonale 67°). Aggiungi punti fotografando un bersaglio noto a distanza nota: d = dimensione × focale / pixel.</string>
+    <!-- Grafico dei punti: la focale implicita contro la distanza -->
+    <string name="calibration_chart_title">Punti e retta di regressione</string>
+    <string name="calibration_chart_ok">%1$s punti sulla linea, focale attesa ≈ %2$s px</string>
+    <string name="calibration_chart_outliers">%1$s punti stanno lontano dalla linea (rosso): eliminali, distorcono la media.</string>
+    <string name="calibration_axis_horizontal">orizz</string>
+    <string name="calibration_axis_vertical">vert</string>
+    <string name="calibration_delete_point">Elimina punto</string>
+    <string name="calibration_active_lens">Stai calibrando %1$s</string>
+    <string name="calibration_points_by_lens">Punti per lente</string>
+    <string name="calibration_lens_points">%1$s · punti: %2$d</string>
+    <string name="calibration_clear_lens">Elimina tutti i punti di questa lente</string>
+    <string name="calibration_clear_all">Elimina la calibrazione di tutte le lenti</string>
+    <string name="calibration_clear_title">Eliminare la calibrazione?</string>
+    <string name="calibration_clear_message_lens">I punti di questa lente vengono rimossi: la calibrazione di questa lente riparte da zero.</string>
+    <string name="calibration_clear_message_all">I punti di ogni lente vengono rimossi: ogni calibrazione riparte da zero.</string>
+    <!-- Trasferimento della calibrazione fra due telefoni (CalibrationTransfer) -->
+    <string name="calibration_transfer_title">Condividi o importa una calibrazione</string>
+    <string name="calibration_transfer_entry">Condividi o importa</string>
+    <string name="calibration_transfer_export_title">Manda questa calibrazione</string>
+    <string name="calibration_transfer_device">Da: %1$s</string>
+    <string name="calibration_transfer_summary">%1$s lenti, %2$s punti.</string>
+    <string name="calibration_transfer_export_hint">Mandala a un altro arciere: la incolla in Miraglio, oppure la legge da un QR.</string>
+    <string name="calibration_transfer_no_points">Non ci sono ancora punti da mandare.</string>
+    <string name="calibration_transfer_share_text">Condividi il testo</string>
+    <string name="calibration_transfer_show_qr">Mostra il QR</string>
+    <string name="calibration_transfer_qr_too_long">Troppi punti per un solo QR: condividila come testo.</string>
+    <string name="calibration_transfer_qr_hint">Fai inquadrare questo codice all\'altro telefono.</string>
+    <string name="calibration_transfer_import_title">Importa una calibrazione</string>
+    <string name="calibration_transfer_import_hint">Incolla il testo ricevuto, o inquadra il QR sull\'altro telefono.</string>
+    <string name="calibration_transfer_import_field">Testo ricevuto</string>
+    <string name="calibration_transfer_import_action">Importa</string>
+    <string name="calibration_transfer_scan_action">Inquadra il QR</string>
+    <string name="calibration_transfer_scan_hint">Inquadra il codice sull\'altro telefono.</string>
+    <string name="calibration_transfer_unreadable">Non è una calibrazione di Miraglio, o il testo è arrivato tagliato.</string>
+    <string name="calibration_transfer_imported">%1$s lenti, %2$s punti importati.</string>
+    <string name="calibration_transfer_verify_after">Ora misura un bersaglio noto a distanza nota in Calibrazione per verificare la focale importata.</string>
+    <string name="calibration_transfer_confirm_title">Importare questa calibrazione?</string>
+    <string name="calibration_transfer_confirm_warning">La calibrazione è di un modello di telefono: dipende dalle sue lenti. Importarla sostituisce la calibrazione della stessa lente su questo.</string>
+    <string name="calibration_transfer_map_row">%1$s → %2$s</string>
+    <string name="calibration_transfer_map_skipped">%1$s → non c\'è su questo telefono</string>
+    <string name="calibration_transfer_count_mismatch">Quel telefono ha %1$s lenti posteriori, questo %2$s: l\'ordine può non corrispondere.</string>
+    <string name="calibration_transfer_skipped_note">Le lenti che qui non ci sono si saltano: non si appoggiano a un\'altra lente.</string>
+
+    <!-- Dialog di aggiornamento -->
+    <string name="update_dialog_title_downloading">Scarico la versione %1$s</string>
+    <string name="update_dialog_title_available">Aggiornamento disponibile</string>
+    <string name="update_dialog_version_line">Versione %1$s (installata: %2$s)</string>
+    <string name="update_dialog_ready">Scaricato. Premi Installa e conferma nella schermata di sistema che si apre.</string>
+    <string name="update_dialog_permission">Android deve autorizzare Miraglio a installare app: attiva la voce nella schermata appena aperta, poi torna qui e premi Installa.</string>
+    <string name="update_dialog_failed">Non è riuscito: %1$s</string>
+    <string name="update_dialog_progress_percent">%1$s%%</string>
+    <string name="update_dialog_size">%1$s MB</string>
+    <!-- Calibrazione guidata dal vivo -->
+    <string name="focal_calibrate_axis">Calibra: %1$s (%2$s)</string>
+    <string name="focal_switch_to_width">↔ Passa a larghezza</string>
+    <string name="focal_switch_to_height">↕ Passa ad altezza</string>
+    <string name="focal_distance_label">Distanza (%1$s)</string>
+    <string name="focal_axis_size_label">%1$s (%2$s)</string>
+    <string name="focal_save_point">Salva punto</string>
+    <string name="focal_retake">Ripeti</string>
+    <!-- Distanza di calibrazione dal GPS: si segna il bersaglio da davanti, si usa da dove si mira -->
+    <string name="focal_gps_mark">Segna bersaglio</string>
+    <string name="focal_gps_use">Distanza GPS</string>
+    <string name="focal_gps_marked">Bersaglio segnato (±%1$s)</string>
+    <string name="focal_gps_wait_fix">Attendi il fix GPS: resta fermo…</string>
+    <string name="focal_gps_no_permission">La distanza GPS richiede il permesso di posizione.</string>
+    <string name="focal_gps_no_mark">Nessun bersaglio segnato: vai davanti all\'oggetto e premi Segna bersaglio.</string>
+    <string name="focal_gps_distance">Distanza dal GPS: %1$s (±%2$s)</string>
+    <string name="focal_gps_same_point">Sei sul punto segnato: segna il bersaglio dove sta l\'oggetto.</string>
+    <string name="focal_pixels">Pixel: %1$s</string>
+    <string name="focal_points_saved">Punti: %1$s</string>
+    <string name="focal_implied_focal">%1$s ≈ %2$s px (1×)</string>
+    <string name="focal_example">Esempio: paglione alto %1$s a %2$s → linee orizzontali sui bordi sup/inf → salva. Se ottieni fy ≈ 683 px e la teorica era 400 px, la calibrazione è 1.6× più lunga.</string>
+    <!-- Verifica distanza (GPS) -->
+    <string name="measurement_title">Verifica distanza</string>
+    <string name="measurement_gps_disabled">GPS disattivato. Attiva la posizione (GPS) per misurare.</string>
+    <string name="measurement_permission_needed">Servono i permessi di posizione per la misura</string>
+    <string name="measurement_idle_hint">Premi MISURA: la partenza si blocca sul fix del momento, poi spostati fino al punto finale</string>
+    <string name="measurement_start">MISURA</string>
+    <string name="measurement_gps_missing">GPS assente</string>
+    <string name="measurement_fix_ready">Fix GPS disponibile (±%1$s)</string>
+    <string name="measurement_fix_improve">Fix da migliorare: ora ±%1$s (serve entro ±%2$s), all\'aperto</string>
+    <string name="measurement_waiting_first_fix">In attesa del primo fix satellitare (all\'aperto)…</string>
+    <string name="measurement_last_estimate">Stima ultima distanza: %1$s</string>
+    <string name="measurement_high_error_title">Errore della misura elevato</string>
+    <string name="measurement_high_error_message">L\'errore della misura è maggiore di %1$s (stimato ±%2$s). Vuoi aspettare un fix dal satellite per un errore minore?</string>
+    <string name="measurement_continue">Continua</string>
+    <string name="measurement_wait">Aspetta</string>
+    <string name="measurement_waiting_start_fix">In attesa del fix di partenza</string>
+    <string name="measurement_walk_to_target">Muoviti fino al paglione</string>
+    <string name="measurement_start_fix_hint">La partenza vuole un fix satellitare di adesso entro ±%1$s. Resta in cielo aperto.</string>
+    <string name="measurement_start_fix_hint_now">La partenza vuole un fix satellitare di adesso entro ±%1$s — ora ±%2$s. Resta in cielo aperto.</string>
+    <string name="measurement_walked">Percorso a piedi: %1$s</string>
+    <string name="measurement_finish">FINO A QUI</string>
+    <string name="measurement_gps_accuracy">Precisione GPS: ±%1$s%2$s</string>
+    <string name="measurement_poor_fix">Fix scadente: con questa precisione la misura può sbagliare di oltre ±%1$s. Attendi in cielo aperto.</string>
+    <string name="measurement_stale_fix">Fix vecchio o scadente: la misura si chiude solo con un fix satellitare di adesso, entro ±%1$s.</string>
+    <string name="measurement_provider_gps">(satellite)</string>
+    <string name="measurement_provider_network">(rete)</string>
+    <string name="measurement_unavailable">Misura non disponibile</string>
+    <string name="measurement_measured">Distanza misurata</string>
+    <string name="measurement_estimated_error">Errore stimato: ±%1$s</string>
+    <string name="measurement_limited_precision">Precisione limitata: il valore può sbagliare di diversi metri.</string>
+    <string name="measurement_app_estimate">Stima dell\'app: %1$s</string>
+    <string name="measurement_gap">Scarto: %1$s</string>
+    <string name="measurement_within_tolerance">Entro ±%1$s ✓</string>
+    <string name="measurement_outside_tolerance">Fuori da ±%1$s ✗</string>
+    <string name="measurement_use_live_aim">Usa prima Tiro Live per avere una stima da confrontare.</string>
+    <string name="measurement_new">NUOVA MISURA</string>
+
+    <!-- Messaggio di condivisione: e' testo composto da codice che non e' un
+         @Composable (ShareMessageComposer), quindi passa da Texts. -->
+    <string name="share_camera_title">📍 Luogo salvato con Miraglio</string>
+    <string name="share_gps_title">📏 Misura GPS salvata con Miraglio</string>
+    <string name="share_distance">Distanza: %1$s</string>
+    <string name="share_distance_with_error">Distanza: %1$s (errore stimato ±%2$s)</string>
+    <string name="share_distance_and_horizontal">Distanza: %1$s (orizzontale %2$s)</string>
+    <string name="share_target_size">Dimensione bersaglio: %1$s</string>
+    <string name="share_direction">Direzione: %1$s (%2$s°)</string>
+    <string name="share_pitch">Inclinazione: %1$s°</string>
+    <string name="share_from_here">Da qui: %1$s</string>
+    <string name="share_no_gps_fix">Posizione GPS non disponibile al momento dello scatto</string>
+    <string name="share_target_estimated">🎯 Bersaglio (stimato): %1$s</string>
+    <string name="share_arrival">Arrivo: %1$s</string>
+    <string name="share_start">Partenza: %1$s</string>
+    <string name="share_coordinates">%1$s (±%2$s)</string>
+    <string name="share_accuracy">±%1$s</string>
+    <string name="share_low_precision_warning">⚠️ Precisione limitata: il valore può sbagliare di diversi metri.</string>
+
+    <!-- Rosa dei venti a 8 settori: in italiano O e SO dove l'inglese ha W e SW -->
+    <string name="compass_n">N</string>
+    <string name="compass_ne">NE</string>
+    <string name="compass_e">E</string>
+    <string name="compass_se">SE</string>
+    <string name="compass_s">S</string>
+    <string name="compass_sw">SO</string>
+    <string name="compass_w">O</string>
+    <string name="compass_nw">NO</string>
+
+    <!-- Invito a installare Miraglio su un altro telefono (InstallInvite) -->
+    <string name="install_invite_intro">🏹 Prova Miraglio: stima la distanza del bersaglio con la fotocamera del telefono.</string>
+    <string name="install_invite_open_link">Apri questo link dal telefono Android e installala:</string>
+    <string name="install_invite_android_confirms">Android chiede due conferme — autorizza «installa app sconosciute» e poi premi Installa. È normale: Miraglio non è sul Play Store.</string>
+    <string name="install_invite_calibrate">Al primo avvio fai la calibrazione, altrimenti la distanza può sbagliare anche del 30%.</string>
+
+    <!-- Messaggi di stato e di errore delle ViewModel -->
+    <string name="measurement_start_reduced_accuracy">Partenza con precisione ridotta: ±%1$s</string>
+    <string name="measurement_start_fix_needed">Attendi il fix di partenza: serve un fix satellitare (all\'aperto)</string>
+    <string name="measurement_fix_stale">Fix GPS non aggiornato: attendi qualche secondo in cielo aperto e riprova</string>
+    <string name="lens_label">Lente %1$s/%2$s</string>
+    <string name="capture_target_straw">Paglione</string>
+    <string name="capture_target_3d">Targa 3D</string>
+    <string name="focal_invalid_distance">Inserisci una distanza valida e posiziona le linee</string>
+    <string name="focal_point_saved">Punto salvato: %1$s · %2$s px · f≈%3$s px</string>
+    <string name="focal_verify_hint">Calibrazione importata: misura un bersaglio noto a distanza nota. Attesa f ≈ %1$d px.</string>
+    <string name="focal_verify_ok">Punto salvato. Verifica superata: f ≈ %1$d px contro %2$d px importati.</string>
+    <string name="focal_verify_mismatch">Punto salvato, ma f ≈ %1$d px contro %2$d px importati (scarto %3$s%%). La calibrazione importata non corrisponde a questo telefono: cancella il punto e rimisura, oppure azzera la lente.</string>
+
+    <!-- Guasti della catena di aggiornamento (UpdateFailure): l'id della
+         stringa viaggia con l'eccezione, il testo nasce nell'UpdateManager. -->
+    <string name="update_release_tag_unknown">Etichetta di release non riconosciuta: %1$s</string>
+    <string name="update_release_no_apk">La release %1$s non ha nessun APK allegato</string>
+    <string name="update_github_http_error">GitHub ha risposto %1$s</string>
+    <string name="update_download_incomplete">Download incompleto (%1$s di %2$s byte)</string>
+    <string name="update_redirect_without_target">Reindirizzamento senza destinazione (HTTP %1$s)</string>
+    <string name="update_download_refused">Download rifiutato (HTTP %1$s)</string>
+    <string name="update_too_many_redirects">Troppi reindirizzamenti</string>
+    <string name="update_apk_missing">Il file scaricato non c\'è più</string>
+    <string name="update_no_installer">Nessuna app di sistema ha aperto il file</string>
+    <string name="update_unknown_error">Errore sconosciuto</string>
+</resources>

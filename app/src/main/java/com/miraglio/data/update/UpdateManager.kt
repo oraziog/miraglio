@@ -1,9 +1,12 @@
 package com.miraglio.data.update
 
 import com.miraglio.BuildConfig
+import com.miraglio.R
 import com.miraglio.domain.update.AppVersion
 import com.miraglio.domain.update.InstallInvite
 import com.miraglio.domain.update.ReleaseInfo
+import com.miraglio.domain.update.UpdateFailure
+import com.miraglio.i18n.Texts
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -31,7 +34,8 @@ import javax.inject.Singleton
 class UpdateManager @Inject constructor(
     private val releases: GitHubReleasesClient,
     private val downloader: ApkDownloader,
-    private val installer: ApkInstaller
+    private val installer: ApkInstaller,
+    private val texts: Texts
 ) {
 
     sealed interface State {
@@ -88,7 +92,13 @@ class UpdateManager @Inject constructor(
      * cui l'app legge gli aggiornamenti, quindi si cambia in un posto solo.
      */
     val installPageUrl: String = InstallInvite.releasePageUrl(BuildConfig.UPDATE_REPO)
-    val installInviteMessage: String = InstallInvite.message(BuildConfig.UPDATE_REPO)
+
+    /**
+     * Messaggio d'invito nella lingua corrente. E' una funzione e non una
+     * `val` apposta: questo e' un singleton che vive quanto il processo, e
+     * calcolarlo alla creazione congelerebbe la lingua del primo avvio.
+     */
+    fun installInviteMessage(): String = InstallInvite.message(texts, BuildConfig.UPDATE_REPO)
 
     /**
      * Controllo silenzioso all'avvio: se c'e' una versione nuova apre il
@@ -178,7 +188,10 @@ class UpdateManager @Inject constructor(
             else -> return
         }
         if (!apk.exists()) {
-            setState(State.Failed(release, "Il file scaricato non c'e' piu'"), showDialog = true)
+            setState(
+                State.Failed(release, texts.get(R.string.update_apk_missing)),
+                showDialog = true
+            )
             return
         }
         if (!installer.canInstall()) {
@@ -187,7 +200,10 @@ class UpdateManager @Inject constructor(
             return
         }
         if (!installer.install(apk)) {
-            setState(State.Failed(release, "Nessuna app di sistema ha aperto il file"), showDialog = true)
+            setState(
+                State.Failed(release, texts.get(R.string.update_no_installer)),
+                showDialog = true
+            )
         }
     }
 
@@ -203,6 +219,20 @@ class UpdateManager @Inject constructor(
         _showDialog.value = showDialog
     }
 
-    private fun messageOf(e: Throwable?): String =
-        e?.message?.takeIf { it.isNotBlank() } ?: e?.javaClass?.simpleName ?: "Errore sconosciuto"
+    /**
+     * Testo dell'errore da mostrare.
+     *
+     * Un [UpdateFailure] porta l'id della sua stringa e si traduce qui, unico
+     * punto della catena con un `Texts`; un guasto di sistema (rete assente,
+     * JSON inatteso) porta il messaggio della piattaforma, che non traduciamo:
+     * meglio una riga tecnica in inglese che nessun indizio su cosa e' andato
+     * storto.
+     */
+    private fun messageOf(e: Throwable?): String {
+        if (e == null) return texts.get(R.string.update_unknown_error)
+        if (e is UpdateFailure) return e.messageText(texts)
+        val message = e.message
+        if (!message.isNullOrBlank()) return message
+        return e.javaClass.simpleName.ifBlank { texts.get(R.string.update_unknown_error) }
+    }
 }

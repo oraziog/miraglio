@@ -4,23 +4,27 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
+import androidx.annotation.StringRes
 import androidx.camera.view.PreviewView
 import androidx.core.content.FileProvider
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.miraglio.R
 import com.miraglio.data.camera.CameraService
 import com.miraglio.data.camera.MiraglioAnalyzer
+import com.miraglio.data.feedback.SaveFeedback
 import com.miraglio.data.focal.FocalCalibrationStore
 import com.miraglio.data.location.LocationTracker
 import com.miraglio.data.ocr.OcrTextRecognizer
 import com.miraglio.data.places.PlaceKind
 import com.miraglio.data.places.PlaceRecord
 import com.miraglio.data.places.PlaceSaveState
+import com.miraglio.data.history.HistoryEntry
+import com.miraglio.data.history.MeasurementHistory
 import com.miraglio.data.places.PlacesRepository
 import com.miraglio.data.sensor.Compass
-import com.miraglio.domain.format.ItalianFormat
 import com.miraglio.data.sensor.Inclinometer
 import com.miraglio.data.session.ShotVerificationStore
 import com.miraglio.data.settings.AppSettingsStore
@@ -33,8 +37,13 @@ import com.miraglio.domain.share.ShareMessageComposer
 import com.miraglio.domain.vision.DetectionBox
 import com.miraglio.domain.vision.ObjectDetector
 import com.miraglio.domain.vision.TargetScorer
+import com.miraglio.i18n.Texts
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
+import java.io.File
+import javax.inject.Inject
+import kotlin.math.abs
+import kotlin.math.cos
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -46,10 +55,6 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
-import java.io.File
-import javax.inject.Inject
-import kotlin.math.abs
-import kotlin.math.cos
 
 enum class CaptureDistanceMode { AUTO, TAP, MANUAL, LINEE }
 
@@ -75,7 +80,7 @@ data class LiveSnap(
  * [visionLabel] deve corrispondere al nome classe del modello YOLO.
  */
 enum class TargetClass(
-    val uiLabel: String,
+    @StringRes val uiLabelRes: Int,
     val visionLabel: String,
     val widthPresets: List<Float>,
     val defaultWidth: Float,
@@ -83,7 +88,7 @@ enum class TargetClass(
     val defaultHeight: Float
 ) {
     PAGLIONE(
-        uiLabel = "Paglione",
+        uiLabelRes = R.string.capture_target_straw,
         visionLabel = "circular_target",
         widthPresets = listOf(0.40f, 0.60f, 0.80f, 1.30f),
         defaultWidth = 1.30f,
@@ -91,7 +96,7 @@ enum class TargetClass(
         defaultHeight = 1.30f
     ),
     TARGA(
-        uiLabel = "Targa 3D",
+        uiLabelRes = R.string.capture_target_3d,
         visionLabel = "rectangular_target",
         widthPresets = listOf(0.40f, 0.62f, 0.80f),
         defaultWidth = 0.80f,
@@ -125,7 +130,23 @@ data class MeasureUiState(
     val lineTopNorm: Float? = null,
     val lineBottomNorm: Float? = null,
     val lineFrameHeightPx: Int = 0,
-    val pitchAngleDegrees: Float? = null
+    val pitchAngleDegrees: Float? = null,
+    /**
+     * Tacche del mirino: focale effettiva (px del frame di analisi, zoom
+     * compreso) dell'asse con cui si sta misurando, dimensione del bersaglio in
+     * metri e distanza stimata. Null quando non c'e' niente da disegnare
+     * (in modalita' LINEE la distanza arriva solo col fermo immagine).
+     */
+    val reticleFocalPx: Float? = null,
+    val reticleTargetM: Float? = null,
+    /**
+     * True quando al fermo immagine il telefono si e' mosso rispetto a quando
+     * le linee erano state messe (oltre la soglia). Le linee descrivono
+     * allora un'inquadratura diversa da quella scattata: a distanza lunga un
+     * grado di inclinazione sposta l'oggetto di diversi pixel e la distanza
+     * ne paga il prezzo senza che si veda.
+     */
+    val shotMovedWarning: Boolean = false
 )
 
 @HiltViewModel
@@ -140,7 +161,10 @@ class CaptureViewModel @Inject constructor(
     private val focalStore: FocalCalibrationStore,
     private val shotStore: ShotVerificationStore,
     private val placesRepository: PlacesRepository,
+    private val history: MeasurementHistory,
+    private val saveFeedback: SaveFeedback,
     private val settings: AppSettingsStore,
+    private val texts: Texts,
     private val savedStateHandle: SavedStateHandle
 ) : ViewModel() {
 
@@ -165,8 +189,12 @@ class CaptureViewModel @Inject constructor(
     private val _currentFrameLongSide = MutableStateFlow(1280)
     private val _mode = MutableStateFlow(CaptureDistanceMode.LINEE)
     // Il paglione FITA e' 130 cm; 122 cm e' il bersaglio apposto sul paglione.
-    private val _heightInputCm = MutableStateFlow("130")
-    private val _widthInputCm = MutableStateFlow("130")
+    // Il numero che compare nel campo e' quello dell'unita' in vigore (130 in
+    // metrico, 51 in imperiale): scritto fisso, "130" verrebbe letto come
+    // pollici da chi ha scelto le iarde, cioe' un bersaglio 2,54 volte piu'
+    // grande.
+    private val _heightInput = MutableStateFlow(defaultSizeText(TargetClass.PAGLIONE.defaultHeight))
+    private val _widthInput = MutableStateFlow(defaultSizeText(TargetClass.PAGLIONE.defaultWidth))
     private val _zoomRatio = MutableStateFlow(1f)
     private val _tapLeftNorm = MutableStateFlow<Float?>(null)
     private val _tapRightNorm = MutableStateFlow<Float?>(null)
@@ -188,6 +216,20 @@ class CaptureViewModel @Inject constructor(
 
     /** Pitch bloccato al momento del fermo immagine (per una lettura stabile). */
     private val _frozenPitchDegrees = MutableStateFlow<Float?>(null)
+
+    /**
+     * Pitch **nel momento in cui le linee sono state messe** (l'ultimo "mira").
+     * Lo scatto lo confronta col proprio: se il telefono si e' mosso fra le due
+     * cose, le linee sono state piazzate su un'altra scena e la distanza lo
+     * ignora. Solo le piazzamenti contano — non ogni frame — perche' se le
+     * linee seguono il bersaglio mentre il telefono gira, la mira e' aggiornata
+     * e non c'e' niente da segnalare.
+     */
+    @Volatile
+    private var aimPitchDegrees: Float? = null
+
+    /** true quando lo scatto e' avvenuto con il telefono inclinato di troppo. */
+    private val _shotMoved = MutableStateFlow(false)
 
     // --- Luoghi: direzione e posizione congelate allo scatto ---
     private val _frozenAzimuthDegrees = MutableStateFlow<Float?>(null)
@@ -265,22 +307,23 @@ class CaptureViewModel @Inject constructor(
     ) { direction, distInput ->
         MeasureConfig(
             direction,
-            distInput.replace(',', '.').toFloatOrNull()?.takeIf { it > 0f } ?: 0f
+            // Il valore digitato e' nell'unita' che il campo chiede (m o yd):
+            // la conversione in metri la fa il formattatore, cosi' la regola
+            // del separatore e del fattore sta in un posto solo.
+            texts.format.parseDistance(distInput) ?: 0f
         )
     }
 
     private val configInfo = combine(
-        _heightInputCm,
-        _widthInputCm,
+        _heightInput,
+        _widthInput,
         _mode,
         zoomedFocal,
         measureConfig
-    ) { heightCm, widthCm, mode, zoomFocal, measure ->
+    ) { heightText, widthText, mode, zoomFocal, measure ->
         ConfigInfo(
-            knownHeight = heightCm.replace(',', '.').toFloatOrNull()?.takeIf { it > 0f }?.div(100f)
-                ?: TargetClass.PAGLIONE.defaultHeight,
-            knownWidth = widthCm.replace(',', '.').toFloatOrNull()?.takeIf { it > 0f }?.div(100f)
-                ?: TargetClass.PAGLIONE.defaultWidth,
+            knownHeight = texts.format.parseSize(heightText) ?: TargetClass.PAGLIONE.defaultHeight,
+            knownWidth = texts.format.parseSize(widthText) ?: TargetClass.PAGLIONE.defaultWidth,
             mode = mode,
             fxPx = zoomFocal.first,
             fyPx = zoomFocal.second,
@@ -290,9 +333,9 @@ class CaptureViewModel @Inject constructor(
         )
     }
 
-    val heightInputCm: StateFlow<String> = _heightInputCm.asStateFlow()
+    val heightInput: StateFlow<String> = _heightInput.asStateFlow()
 
-    val widthInputCm: StateFlow<String> = _widthInputCm.asStateFlow()
+    val widthInput: StateFlow<String> = _widthInput.asStateFlow()
 
     val zoomRatio: StateFlow<Float> = _zoomRatio.asStateFlow()
 
@@ -311,6 +354,17 @@ class CaptureViewModel @Inject constructor(
 
     fun toggleOutdoorMode() {
         settings.setOutdoorModeEnabled(!settings.outdoorModeEnabled.value)
+    }
+
+    /**
+     * Blocco della rotazione. Vale per tutta l'app (e' la rotazione delle
+     * activity), ma il comando sta qui perche' e' mentre si mira che un
+     * telefono che gira fa perdere l'inquadratura.
+     */
+    val portraitLocked: StateFlow<Boolean> = settings.portraitLocked
+
+    fun togglePortraitLock() {
+        settings.setPortraitLocked(!settings.portraitLocked.value)
     }
 
     fun toggleLineOrientation() {
@@ -337,8 +391,9 @@ class CaptureViewModel @Inject constructor(
         tapLineOrientation,
         configInfo,
         _latestBoxWidthPx,
-        pitchAndBearing
-    ) { tapLineOrientation, config, autoWidthPx, pb ->
+        pitchAndBearing,
+        _shotMoved
+    ) { tapLineOrientation, config, autoWidthPx, pb, shotMoved ->
         stateFor(
             tap = tapLineOrientation.first,
             config = config,
@@ -347,7 +402,8 @@ class CaptureViewModel @Inject constructor(
             autoWidthPx = autoWidthPx,
             pitch = pb.first,
             bearingLive = pb.second,
-            bearingFrozen = pb.third
+            bearingFrozen = pb.third,
+            shotMoved = shotMoved
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), MeasureUiState())
 
@@ -369,6 +425,24 @@ class CaptureViewModel @Inject constructor(
     init {
         restoreSavedState()
 
+        // Cambio di sistema di unita' mentre questa schermata e' in vita (le
+        // Impostazioni si aprono senza chiudere la mira): i campi gia' compilati
+        // vanno riscritti nell'unita' nuova. Lasciarli com'erano cambierebbe la
+        // misura in silenzio, perche' lo stesso numero letto in pollici invece
+        // che in centimetri e' un oggetto 2,54 volte piu' grande.
+        viewModelScope.launch {
+            var previous = settings.unitSystem.value
+            settings.unitSystem.collect { unit ->
+                if (unit != previous) {
+                    _heightInput.value = texts.format.rewriteSizeInput(_heightInput.value, previous)
+                    _widthInput.value = texts.format.rewriteSizeInput(_widthInput.value, previous)
+                    _measureDistanceInput.value =
+                        texts.format.rewriteDistanceInput(_measureDistanceInput.value, previous)
+                    previous = unit
+                }
+            }
+        }
+
         // Persistenza di processo: input + stato del fermo immagine (linee,
         // sensori congelati, orientamento). La bitmap non è serializzabile
         // nel Bundle della SavedState (TransactionTooLarge): va su file
@@ -385,11 +459,11 @@ class CaptureViewModel @Inject constructor(
                 ) { pitch, azimuth, fix, mode, direction ->
                     SavedSensors(pitch, azimuth, fix, mode, direction)
                 },
-                _heightInputCm,
-                _widthInputCm,
+                _heightInput,
+                _widthInput,
                 _measureDistanceInput
-            ) { lines, sensors, heightCm, widthCm, distanceInput ->
-                SavedState(lines, sensors, heightCm, widthCm, distanceInput)
+            ) { lines, sensors, heightText, widthText, distanceInput ->
+                SavedState(lines, sensors, heightText, widthText, distanceInput)
             }.collect { persisted -> persistAll(persisted) }
         }
 
@@ -451,15 +525,26 @@ class CaptureViewModel @Inject constructor(
     private data class SavedState(
         val lines: SavedLines,
         val sensors: SavedSensors,
-        val heightInputCm: String,
-        val widthInputCm: String,
+        val heightInput: String,
+        val widthInput: String,
         val distanceInput: String
     )
+
+    /**
+     * Registra il pitch nel punto in cui le linee vanno a finire: e' il
+     * riferimento di mira con cui il fermo immagine calcola "quanto mi sono
+     * mosso" (vedi [freezeShotSensors]). Da chiamare a ogni piazzamento, mai
+     * due volte per le stesse linee.
+     */
+    private fun markAimPitch() {
+        aimPitchDegrees = inclinometer.pitchAngleDegrees.value
+    }
 
     /** Linee centrate con apertura di default: nessun bersaglio riconosciuto. */
     private fun centerFreeLines() {
         _lineTopNorm.value = 0.5f - DEFAULT_FREE_LINE_GAP / 2f
         _lineBottomNorm.value = 0.5f + DEFAULT_FREE_LINE_GAP / 2f
+        markAimPitch()
     }
 
     fun freezeFrame() {
@@ -469,6 +554,28 @@ class CaptureViewModel @Inject constructor(
     }
 
     fun unfreeze() {
+        // Chiude la misura di questo fermo immagine: il risultato si legge
+        // PRIMA di azzerare qualunque cosa (le linee azzerrate cancellano la
+        // distanza, e non ci sarebbe piu' niente da archiviare). E' il gesto
+        // che rende inutile il pulsante "Salva" per non perdere il numero:
+        // il fermo immagine puo' essere cambiato dieci volte, la cronologia
+        // tiene quella piu' recente (vedi HistoryBuffer).
+        val daArchiviare = captureState.value.result
+        val fixScatto = _frozenGpsFix.value
+        if (daArchiviare != null) {
+            viewModelScope.launch {
+                history.record(
+                    HistoryEntry(
+                        id = history.newId(),
+                        atMs = System.currentTimeMillis(),
+                        kind = PlaceKind.CAMERA,
+                        distanceM = daArchiviare.distanceMeters,
+                        latitudeDeg = fixScatto?.latitudeDeg?.toFloat(),
+                        longitudeDeg = fixScatto?.longitudeDeg?.toFloat()
+                    )
+                )
+            }
+        }
         _frozenBitmap.value = null
         _lineeBoxes.value = emptyList()
         // Azzera le linee: senza fermo immagine non deve esserci nessun calcolo.
@@ -476,6 +583,10 @@ class CaptureViewModel @Inject constructor(
         _lineBottomNorm.value = null
         _lineFrameHeightPx.value = 0
         _lineFrameWidthPx.value = 0
+        // Niente linee = niente riferimento di mira: l'avviso deve ripartire
+        // dal prossimo piazzamento, non dallo scatto precedente.
+        aimPitchDegrees = null
+        _shotMoved.value = false
         _frozenPitchDegrees.value = null
         _frozenAzimuthDegrees.value = null
         _frozenGpsFix.value = null
@@ -495,9 +606,16 @@ class CaptureViewModel @Inject constructor(
 
     /** Congela pitch, direzione di mira e fix GPS nell'istante dello scatto. */
     private fun freezeShotSensors() {
-        _frozenPitchDegrees.value = inclinometer.pitchAngleDegrees.value
+        val shotPitch = inclinometer.pitchAngleDegrees.value
+        _frozenPitchDegrees.value = shotPitch
         _frozenAzimuthDegrees.value = compass.azimuthDegrees.value
         _frozenGpsFix.value = locationTracker.currentLocation.value?.let { GpsFix.fromLocation(it) }
+        // Avviso "telefono mosso": quanto ha cambiato l'inclinazione fra
+        // l'ultimo piazzamento delle linee e questo scatto. Nessun riferimento
+        // (le linee non sono mai state messe in questo stato) = nessun avviso,
+        // perche' non si sa cosa confrontare.
+        val aim = aimPitchDegrees
+        _shotMoved.value = aim != null && abs(shotPitch - aim) >= PHONE_MOVED_WARNING_DEGREES
     }
 
     // ------------------------------------------------------------------
@@ -517,6 +635,7 @@ class CaptureViewModel @Inject constructor(
         val state = captureState.value
         val result = state.result ?: return null
         return ShareMessageComposer.cameraPlace(
+            texts = texts,
             fix = _frozenGpsFix.value,
             bearingDeg = _frozenAzimuthDegrees.value ?: compass.azimuthDegrees.value,
             distanceM = result.distanceMeters,
@@ -591,6 +710,9 @@ class CaptureViewModel @Inject constructor(
                     ShareImageComposer.writeExifGps(photo, fix)
                 }
                 _placeSaveState.value = PlaceSaveState.SAVED
+                // Conferma con le mani: la foto si salva mentre si sta
+                // guardando il bersaglio, non lo schermo.
+                saveFeedback.saved()
             } else {
                 _placeSaveState.value = PlaceSaveState.FAILED
             }
@@ -615,6 +737,10 @@ class CaptureViewModel @Inject constructor(
                 _lineTopNorm.value = snap.box.left.coerceIn(0f, 1f)
                 _lineBottomNorm.value = snap.box.right.coerceIn(0f, 1f)
             }
+            // Avviene subito DOPO freezeShotSensors: non tocca l'avviso di
+            // questo scatto (gia' calcolato), ma diventa il riferimento per il
+            // prossimo piazzamento.
+            markAimPitch()
         } else {
             centerFreeLines()
         }
@@ -650,6 +776,7 @@ class CaptureViewModel @Inject constructor(
                     _lineTopNorm.value = best.left.coerceIn(0f, 1f)
                     _lineBottomNorm.value = best.right.coerceIn(0f, 1f)
                 }
+                markAimPitch()
             } else {
                 // Nessun rilevamento: linee centrate sulla crocetta (centro immagine)
                 centerFreeLines()
@@ -682,6 +809,7 @@ class CaptureViewModel @Inject constructor(
                 _lineTopNorm.value = snap.left.coerceIn(0f, 1f)
                 _lineBottomNorm.value = snap.right.coerceIn(0f, 1f)
             }
+            markAimPitch()
             return
         }
         val gap = currentLineGapOrDefault()
@@ -697,6 +825,7 @@ class CaptureViewModel @Inject constructor(
         }
         _lineTopNorm.value = a.coerceIn(0f, 1f)
         _lineBottomNorm.value = b.coerceIn(0f, 1f).coerceAtLeast(a.coerceIn(0f, 1f) + MIN_LINE_GAP)
+        markAimPitch()
     }
 
     /** Sposta entrambe le linee in verticale preservando l'apertura (zona SX). */
@@ -707,6 +836,7 @@ class CaptureViewModel @Inject constructor(
         val newTop = (top + dyNorm).coerceIn(0f, 1f - gap)
         _lineTopNorm.value = newTop
         _lineBottomNorm.value = newTop + gap
+        markAimPitch()
     }
 
     /** Sposta solo la linea superiore/sinistra, rispettando il gap minimo. */
@@ -714,6 +844,7 @@ class CaptureViewModel @Inject constructor(
         val top = _lineTopNorm.value ?: return
         val bottom = _lineBottomNorm.value ?: return
         _lineTopNorm.value = (top + deltaNorm).coerceIn(0f, (bottom - MIN_LINE_GAP).coerceAtLeast(0f))
+        markAimPitch()
     }
 
     /** Sposta solo la linea inferiore/destra, rispettando il gap minimo. */
@@ -721,6 +852,7 @@ class CaptureViewModel @Inject constructor(
         val top = _lineTopNorm.value ?: return
         val bottom = _lineBottomNorm.value ?: return
         _lineBottomNorm.value = (bottom + deltaNorm).coerceIn((top + MIN_LINE_GAP).coerceAtMost(1f), 1f)
+        markAimPitch()
     }
 
     /**
@@ -744,11 +876,14 @@ class CaptureViewModel @Inject constructor(
         }
         _lineTopNorm.value = newTop.coerceIn(0f, 1f)
         _lineBottomNorm.value = newBottom.coerceIn(0f, 1f)
+        markAimPitch()
     }
 
     fun resetLines() {
         _lineTopNorm.value = null
         _lineBottomNorm.value = null
+        aimPitchDegrees = null
+        _shotMoved.value = false
     }
 
     private fun currentLineGapOrDefault(): Float {
@@ -809,6 +944,11 @@ class CaptureViewModel @Inject constructor(
                     )
                 )
                 _liveSnap.value = liveBest?.let { LiveSnap(it.box, frameW, frameH) }
+                // Le linee live seguono il bersaglio rilevato: ogni snap che
+                // cambia la posizione e' un nuovo piazzamento di mira. Se il
+                // telefono gira ma il bersaglio resta agganciato, la mira e'
+                // aggiornata e non c'e' nulla da segnalare allo scatto.
+                if (liveBest != null) markAimPitch()
                 if (state.frameWidth > 0) {
                     _frameWidthPx.value = state.frameWidth
                     val longSide = maxOf(state.frameWidth, state.frameHeight)
@@ -846,8 +986,8 @@ class CaptureViewModel @Inject constructor(
      * passata) restano cosi' ignorate.
      */
     private fun persistAll(state: SavedState) {
-        savedStateHandle[KEY_HEIGHT_INPUT] = state.heightInputCm
-        savedStateHandle[KEY_WIDTH_INPUT] = state.widthInputCm
+        savedStateHandle[KEY_HEIGHT_INPUT] = state.heightInput
+        savedStateHandle[KEY_WIDTH_INPUT] = state.widthInput
         savedStateHandle[KEY_DISTANCE_INPUT] = state.distanceInput
         savedStateHandle[KEY_MODE] = state.sensors.mode.ordinal
         savedStateHandle[KEY_DIRECTION] = state.sensors.direction.ordinal
@@ -872,8 +1012,8 @@ class CaptureViewModel @Inject constructor(
 
     /** Ripristina i valori se il fermo immagine era attivo (chiave-mestra). */
     private fun restoreSavedState() {
-        savedStateHandle.get<String>(KEY_HEIGHT_INPUT)?.let { _heightInputCm.value = it }
-        savedStateHandle.get<String>(KEY_WIDTH_INPUT)?.let { _widthInputCm.value = it }
+        savedStateHandle.get<String>(KEY_HEIGHT_INPUT)?.let { _heightInput.value = it }
+        savedStateHandle.get<String>(KEY_WIDTH_INPUT)?.let { _widthInput.value = it }
         savedStateHandle.get<String>(KEY_DISTANCE_INPUT)?.let { _measureDistanceInput.value = it }
         savedStateHandle.get<Int>(KEY_MODE)?.let { ord ->
             CaptureDistanceMode.entries.getOrNull(ord)?.let { _mode.value = it }
@@ -1012,22 +1152,29 @@ class CaptureViewModel @Inject constructor(
         }
         val factor = if (focal != null && focalMain != null && focalMain > 0f) focal / focalMain else 1f
         val factorLabel = when {
-            factor < 0.95f -> " \u2248${ItalianFormat.number(factor, 1)}\u00d7"
-            factor > 1.05f -> " \u2248${ItalianFormat.number(factor, 1)}\u00d7"
+            factor < 0.95f -> " \u2248${texts.format.number(factor, 1)}\u00d7"
+            factor > 1.05f -> " \u2248${texts.format.number(factor, 1)}\u00d7"
             else -> ""
         }
-        _lensLabel.value = "Lente ${idx + 1}/${ids.size}$factorLabel"
+        _lensLabel.value = texts.get(R.string.lens_label, idx + 1, ids.size) + factorLabel
     }
 
-    /** Input manuale altezza nota in cm (accetta virgola o punto). */
-    fun setHeightInputCm(text: String) {
-        _heightInputCm.value = text
+    /**
+     * Input manuale dell'altezza nota, nell'unita' che il campo chiede
+     * (`format.sizeUnit`: centimetri o pollici). Accetta virgola o punto.
+     */
+    fun setHeightInput(text: String) {
+        _heightInput.value = text
     }
 
-    /** Input manuale larghezza nota in cm (linee verticali). */
-    fun setWidthInputCm(text: String) {
-        _widthInputCm.value = text
+    /** Input manuale della larghezza nota (linee verticali), stessa unita' dell'altezza. */
+    fun setWidthInput(text: String) {
+        _widthInput.value = text
     }
+
+    /** Precompilazione di un campo dimensione con una misura in metri. */
+    private fun defaultSizeText(meters: Float): String =
+        texts.format.number(texts.format.sizeValue(meters), 0)
 
     fun setMeasureDirection(direction: MeasureDirection) {
         _measureDirection.value = direction
@@ -1073,7 +1220,8 @@ class CaptureViewModel @Inject constructor(
         autoWidthPx: Float,
         pitch: Float,
         bearingLive: Float,
-        bearingFrozen: Float?
+        bearingFrozen: Float?,
+        shotMoved: Boolean
     ): MeasureUiState {
         val estimator = estimatorFor(config)
         // In modalita' LINEE l'angolo viene bloccato al momento dello scatto:
@@ -1145,6 +1293,19 @@ class CaptureViewModel @Inject constructor(
             null
         }
 
+        // Tacche del mirino: la focale dell'asse con cui si sta misurando e la
+        // dimensione del bersaglio. In modalita' ALTEZZA la dimensione la misura
+        // l'app dalle linee; negli altri casi e' quella dichiarata — digitata o
+        // preset della classe riconosciuta — cioe' la stessa che ha prodotto la
+        // distanza: le tacche e la misura restano d'accordo per costruzione.
+        val horizontalLines = orientation == LineOrientation.HORIZONTAL
+        val (focalFx, focalFy) = effectiveFocalPx(config)
+        val reticleTargetM: Float? = when {
+            config.direction == MeasureDirection.ALTEZZA -> measuredSize
+            horizontalLines -> config.knownHeight.takeIf { it > 0f }
+            else -> config.knownWidth.takeIf { it > 0f }
+        }
+
         return MeasureUiState(
             result = distance?.let { MeasureResult(it, pitch) },
             measuredSizeM = measuredSize,
@@ -1155,7 +1316,10 @@ class CaptureViewModel @Inject constructor(
             lineTopNorm = line.top,
             lineBottomNorm = line.bottom,
             lineFrameHeightPx = line.frameHeight,
-            pitchAngleDegrees = pitch
+            pitchAngleDegrees = pitch,
+            reticleFocalPx = (if (horizontalLines) focalFy else focalFx).takeIf { it > 0f },
+            reticleTargetM = reticleTargetM,
+            shotMovedWarning = shotMoved
         )
     }
 
@@ -1177,18 +1341,26 @@ class CaptureViewModel @Inject constructor(
         return pixelExtent * config.measureDistanceM / (focal1x * zoom)
     }
 
-    private fun estimatorFor(config: ConfigInfo): PinholeDistanceEstimator {
-        // Lo zoom digitale moltiplica la focale effettiva (focale x z).
-        // Ogni asse usa la focale calibrata se disponibile, altrimenti quella
-        // teorica: calibrando solo l'altezza (fy) non si deve perdere la
-        // calibrazione per la misura in altezza.
+    /**
+     * Focali effettive (px del frame di analisi, zoom compreso) per i due assi.
+     * Lo zoom digitale moltiplica la focale (focale x z); ogni asse usa la
+     * focale calibrata se disponibile, altrimenti quella teorica: calibrando
+     * solo l'altezza (fy) non si deve perdere la calibrazione per la misura in
+     * altezza.
+     */
+    private fun effectiveFocalPx(config: ConfigInfo): Pair<Float, Float> {
         val zoom = config.zoomRatio.coerceAtLeast(MIN_ZOOM_RATIO)
         val fx = config.fxPx?.takeIf { it > 0f } ?: theoreticalIntrinsics.fxPixels
         val fy = config.fyPx?.takeIf { it > 0f } ?: theoreticalIntrinsics.fyPixels
+        return Pair(fx * zoom, fy * zoom)
+    }
+
+    private fun estimatorFor(config: ConfigInfo): PinholeDistanceEstimator {
+        val (fx, fy) = effectiveFocalPx(config)
         return PinholeDistanceEstimator(
             CameraIntrinsics(
-                fxPixels = fx * zoom,
-                fyPixels = fy * zoom,
+                fxPixels = fx,
+                fyPixels = fy,
                 cxPixels = theoreticalIntrinsics.cxPixels,
                 cyPixels = theoreticalIntrinsics.cyPixels
             )
@@ -1206,6 +1378,15 @@ class CaptureViewModel @Inject constructor(
         private const val SNAP_THRESHOLD_NORM = 0.18f
         private const val MIN_LINE_GAP = 0.02f
         private const val DEFAULT_FREE_LINE_GAP = 0.35f
+
+        /**
+         * Soglia dell'avviso "telefono mosso": oltre questa differenza di
+         * inclinazione fra mira e scatto, le linee piazzate non descrivono piu'
+         * il fotogramma scattato. A 80 m un grado sposta il bersaglio di circa
+         * 1,4 m: la soglia sta sotto cio' che altera visibilmente la misura e
+         * sopra il tremore di una mano ferma.
+         */
+        private const val PHONE_MOVED_WARNING_DEGREES = 3f
 
         /** Nome file del fermo immagine persistito tra processi. */
         private const val FROZEN_IMAGE_FILE = "frozen.jpg"

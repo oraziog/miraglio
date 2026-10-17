@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Lingue supportate dall'app, in ordine di preferenza.
+
+  "en" e' la lingua di ripiego (values/ e' in inglese): un telefono che non sia
+  tradotto finisce li'. Poi le traduzioni: "it" (values-it/), "es"
+  (values-es/).
+
+  Serve a due cose:
+  - da Android 13 in poi, alla scelta della lingua per singola app in
+    Impostazioni di sistema -> App -> Miraglio -> Lingua;
+  - al selettore dentro Miraglio (Impostazioni -> Lingua, vedi AppLanguage):
+    quelle che si possono scegliere la' sono esattamente le lingue di questo
+    file.
+
+  Le cartelle, questo elenco e le lingue scelte in AppLanguage devono restare
+  allineati: ci pensa AppLanguageTest, che confronta le tre cose a ogni
+  ./gradlew check (StringsXmlTest controlla invece il contenuto delle cartelle
+  di traduzione).
+-->
+<locale-config xmlns:android="http://schemas.android.com/apk/res/android">
+    <locale android:name="en" />
+    <locale android:name="it" />
+    <locale android:name="es" />
+</locale-config>

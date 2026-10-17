@@ -4,6 +4,13 @@
 
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission android:name="android.permission.VIBRATE" />
+
+    <!-- CPU sveglia durante la misura GPS (fase TRACKING): camminando con il
+         telefono in mano lo schermo si spegne e Android mette la CPU in doze,
+         perdendo i fix quando servono di piu'. Wake lock PARZIALE (non tiene
+         acceso lo schermo), rilasciato a fine misura: vedi
+         BackgroundPowerController. -->
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
 
@@ -20,13 +27,19 @@
     <uses-feature android:name="android.hardware.sensor.accelerometer" android:required="true" />
     <uses-feature android:name="android.hardware.location.gps" android:required="false" />
 
+    <!-- localeConfig: da Android 13 in poi espone Miraglio fra le app la cui
+         lingua si puo' scegliere a parte (Impostazioni di sistema -> App ->
+         Miraglio -> Lingua). Senza, l'app seguirebbe solo la lingua del
+         telefono. Su Android 12 e precedenti l'attributo viene ignorato. -->
     <application
         android:name=".MiraglioApp"
         android:allowBackup="true"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
+        android:localeConfig="@xml/locales_config"
         android:supportsRtl="true"
-        android:theme="@style/Theme.Miraglio">
+        android:theme="@style/Theme.Miraglio"
+        tools:ignore="UnusedAttribute">
 
         <activity
             android:name=".MainActivity"

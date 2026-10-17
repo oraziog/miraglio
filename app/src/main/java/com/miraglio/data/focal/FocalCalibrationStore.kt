@@ -2,6 +2,7 @@ package com.miraglio.data.focal
 
 import android.content.Context
 import android.content.SharedPreferences
+import com.miraglio.domain.location.GpsFix
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -65,15 +66,36 @@ class FocalCalibrationStore @Inject constructor(
         private const val KEY_DEFAULT_LENS = "default_lens"
         private const val KEY_MIGRATED = "legacy_migrated"
 
+        // Pin del bersaglio di calibrazione: un solo valore, non per lente —
+        // la posizione del bersaglio non dipende dall'obiettivo usato.
+        private const val KEY_TARGET_FIX = "target_fix"
+
         // Chiavi della vecchia calibrazione "unica" (migrate verso la lente 1x).
         private const val KEY_FX = "fx_px"
         private const val KEY_FY = "fy_px"
         private const val KEY_POINTS = "points_json"
 
-        private fun fxKey(lens: String) = "fx_$lens"
-        private fun fyKey(lens: String) = "fy_$lens"
-        private fun pointsKey(lens: String) = "points_$lens"
-        private fun fmmKey(lens: String) = "fmm_$lens"
+        // Prefissi delle chiavi per-lente. Servono anche a CANCELLARE per
+        // lente e a CONTARE i punti per lente: entrambe le cose si fanno
+        // scorrendo le chiavi salvate, senza tenere un indice a parte che
+        // potrebbe disallinearsi dai dati veri.
+        private const val FX_PREFIX = "fx_"
+        private const val FY_PREFIX = "fy_"
+        private const val POINTS_PREFIX = "points_"
+        private const val FMM_PREFIX = "fmm_"
+
+        // Focale attesa dopo un'importazione: resta finche' una misura di
+        // prova su un bersaglio noto non conferma (o smentisce) i numeri
+        // arrivati dall'altro telefono.
+        private const val VERIFY_FX_PREFIX = "verify_fx_"
+        private const val VERIFY_FY_PREFIX = "verify_fy_"
+
+        private fun fxKey(lens: String) = "$FX_PREFIX$lens"
+        private fun fyKey(lens: String) = "$FY_PREFIX$lens"
+        private fun pointsKey(lens: String) = "$POINTS_PREFIX$lens"
+        private fun fmmKey(lens: String) = "$FMM_PREFIX$lens"
+        private fun verifyFxKey(lens: String) = "$VERIFY_FX_PREFIX$lens"
+        private fun verifyFyKey(lens: String) = "$VERIFY_FY_PREFIX$lens"
 
         /** Stima prudente se l'HAL non espone LENS_FOCAL_LENGTH (raro). */
         const val DEFAULT_NOMINAL_FOCAL_MM = 4.3f
@@ -97,6 +119,34 @@ class FocalCalibrationStore @Inject constructor(
     private val _points = MutableStateFlow(loadPoints(_activeLens.value))
     /** Punti di calibrazione della lente attiva. */
     val pointsFlow: StateFlow<List<FocalPoint>> = _points.asStateFlow()
+
+    private val _targetFix = MutableStateFlow(loadTargetFix())
+    /**
+     * Pin del bersaglio di calibrazione: dove si trovava l'oggetto quando
+     * l'utente ha premuto "Segna bersaglio" standogli davanti. E' la seconda
+     * posizione della distanza GPS che riempie il campo distanza; resta fra
+     * due sessioni perche' il bersaglio, di solito, non si muove.
+     */
+    val targetFix: StateFlow<GpsFix?> = _targetFix.asStateFlow()
+
+    private val _verificationExpected =
+        MutableStateFlow(loadVerification())
+    /**
+     * Focale da verificare per lente (id camera -> (fx, fy)), impostata
+     * dall'importazione e cancellata quando la misura di prova la conferma.
+     * Un valore assente su un asse significa che il file non aveva punti per
+     * quell'asse: non c'e' niente da confrontare.
+     */
+    val verificationExpected: StateFlow<Map<String, Pair<Float?, Float?>>> =
+        _verificationExpected.asStateFlow()
+
+    private val _pointCounts = MutableStateFlow(loadPointCounts())
+    /**
+     * Quanti punti salvati ha ogni lente (id camera -> numero di punti). Le
+     * lenti senza punti non compaiono: chi legge vuole sapere dove sono i
+     * punti, non l'elenco degli obiettivi del telefono.
+     */
+    val pointCountsByLens: StateFlow<Map<String, Int>> = _pointCounts.asStateFlow()
 
     /**
      * Imposta la lente principale (1x) con la sua focale nominale e migra la
@@ -138,6 +188,32 @@ class FocalCalibrationStore @Inject constructor(
         publish()
     }
 
+    /** Segna (o risegna) la posizione del bersaglio di calibrazione. */
+    fun setTargetFix(fix: GpsFix) {
+        val json = JSONObject()
+            .put("lat", fix.latitudeDeg)
+            .put("lon", fix.longitudeDeg)
+            .put("acc", fix.accuracyM.toDouble())
+            .put("ts", fix.timeMs)
+            .toString()
+        prefs.edit().putString(KEY_TARGET_FIX, json).apply()
+        _targetFix.value = fix
+    }
+
+    /** Il pin salvato, o null se nessuno ha mai segnato un bersaglio. */
+    private fun loadTargetFix(): GpsFix? =
+        prefs.getString(KEY_TARGET_FIX, null)?.let { raw ->
+            runCatching {
+                val o = JSONObject(raw)
+                GpsFix(
+                    latitudeDeg = o.getDouble("lat"),
+                    longitudeDeg = o.getDouble("lon"),
+                    accuracyM = o.getDouble("acc").toFloat(),
+                    timeMs = o.getLong("ts")
+                )
+            }.getOrNull()
+        }
+
     fun addPoint(
         distanceM: Float,
         pixels: Float,
@@ -172,9 +248,149 @@ class FocalCalibrationStore @Inject constructor(
         publish()
     }
 
+    /**
+     * Cancella i punti della lente attiva e la focale che ne deriva: la lente
+     * riparte da zero, come prima della prima calibrazione (per la lente
+     * principale la focale torna teorica, per le altre vale il ripiego di
+     * [computeActiveFocal]). I punti delle altre lenti non si toccano.
+     */
+    fun clearPoints() {
+        val lens = _activeLens.value ?: return
+        prefs.edit().apply {
+            remove(pointsKey(lens))
+            remove(fxKey(lens))
+            remove(fyKey(lens))
+            remove(verifyFxKey(lens))
+            remove(verifyFyKey(lens))
+            apply()
+        }
+        _verificationExpected.value = _verificationExpected.value - lens
+        publish()
+    }
+
+    /**
+     * Cancella punti e focali di **tutte** le lenti: l'uscita per chi ha
+     * calibrazioni sbagliate accumulate su piu' obiettivi e vuole ripartire da
+     * zero. Non tocca le focali nominali (`fmm_`), che arrivano dall'HAL e non
+     * sono una calibrazione dell'utente.
+     */
+    fun clearAllPoints() {
+        val daCancellare = prefs.all.keys.filter {
+            it.startsWith(POINTS_PREFIX) || it.startsWith(FX_PREFIX) ||
+                it.startsWith(FY_PREFIX) || it.startsWith(VERIFY_FX_PREFIX) ||
+                it.startsWith(VERIFY_FY_PREFIX)
+        }
+        prefs.edit().apply {
+            daCancellare.forEach { remove(it) }
+            apply()
+        }
+        _verificationExpected.value = emptyMap()
+        publish()
+    }
+
+    /**
+     * Punti di **tutte** le lenti (id camera -> punti), per l'esportazione.
+     * Le lenti senza punti non compaiono, come nel conteggio per la card.
+     */
+    fun allPointsByLens(): Map<String, List<FocalPoint>> =
+        prefs.all.keys
+            .filter { it.startsWith(POINTS_PREFIX) && it != KEY_POINTS }
+            .associate { key ->
+                key.removePrefix(POINTS_PREFIX) to
+                    parsePoints(prefs.getString(key, null).orEmpty())
+            }
+            .filterValues { it.isNotEmpty() }
+
+    /**
+     * Scrive una calibrazione importata da un altro telefono: per ogni lente
+     * (id **locale**) i punti del file, e la focale che ne deriva.
+     *
+     * Sostituisce quello che c'era su quella lente invece di aggiungersi: una
+     * calibrazione importata e' una calibrazione nuova, e farne la media con la
+     * vecchia darebbe il numero di mezzo fra due telefoni diversi — cioe' un
+     * valore che non vale per nessuno dei due.
+     */
+    fun replaceLenses(pointsByLens: Map<String, List<FocalPoint>>) {
+        pointsByLens.forEach { (lens, punti) ->
+            if (punti.isEmpty()) return@forEach
+            savePoints(lens, punti)
+            val focal = recomputeFocal(punti)
+            saveFocal(lens, focal)
+            // La focale appena scritta diventa quella "attesa": la prima
+            // misura di prova su un bersaglio noto la confronta col numero
+            // arrivato dall'altro telefono.
+            saveVerification(lens, focal)
+        }
+        _verificationExpected.value = loadVerification()
+        publish()
+    }
+
+    /** Focale attesa per la lente, o null se non c'e' una verifica in sospeso. */
+    fun verificationFor(lens: String?): Pair<Float?, Float?>? =
+        lens?.let { _verificationExpected.value[it] }
+
+    /**
+     * La verifica e' conclusa (superata): si smette di chiedere la misura di
+     * prova. Se non lo e', il valore resta e la schermata continua a dirlo.
+     */
+    fun clearVerification(lens: String?) {
+        if (lens == null) return
+        prefs.edit().apply {
+            remove(verifyFxKey(lens))
+            remove(verifyFyKey(lens))
+            apply()
+        }
+        _verificationExpected.value = _verificationExpected.value - lens
+    }
+
+    private fun saveVerification(lens: String, focal: Pair<Float?, Float?>) {
+        val (fx, fy) = focal
+        prefs.edit().apply {
+            if (fx != null && fx > 0f) putFloat(verifyFxKey(lens), fx) else remove(verifyFxKey(lens))
+            if (fy != null && fy > 0f) putFloat(verifyFyKey(lens), fy) else remove(verifyFyKey(lens))
+            apply()
+        }
+    }
+
+    private fun loadVerification(): Map<String, Pair<Float?, Float?>> {
+        val perLente = mutableMapOf<String, Pair<Float?, Float?>>()
+        prefs.all.forEach { (key, value) ->
+            when {
+                key.startsWith(VERIFY_FX_PREFIX) -> {
+                    val lens = key.removePrefix(VERIFY_FX_PREFIX)
+                    val fx = (value as? Float)?.takeIf { it > 0f }
+                    perLente[lens] = Pair(fx, perLente[lens]?.second)
+                }
+                key.startsWith(VERIFY_FY_PREFIX) -> {
+                    val lens = key.removePrefix(VERIFY_FY_PREFIX)
+                    val fy = (value as? Float)?.takeIf { it > 0f }
+                    perLente[lens] = Pair(perLente[lens]?.first, fy)
+                }
+            }
+        }
+        return perLente
+    }
+
+    /**
+     * Punti salvati di ogni lente, letti dalle chiavi su disco.
+     *
+     * La chiave della vecchia calibrazione "unica" si chiama `points_json` e
+     * comincia come le altre: senza l'esclusione esplicita comparirebbe una
+     * lente che si chiama "json".
+     */
+    private fun loadPointCounts(): Map<String, Int> =
+        prefs.all.keys
+            .filter { it.startsWith(POINTS_PREFIX) && it != KEY_POINTS }
+            .associate { key ->
+                val punti = parsePoints(prefs.getString(key, null).orEmpty())
+                key.removePrefix(POINTS_PREFIX) to punti.size
+            }
+            .filterValues { it > 0 }
+
     private fun publish() {
         _focal.value = computeActiveFocal()
         _points.value = loadPoints(_activeLens.value)
+        _pointCounts.value = loadPointCounts()
     }
 
     /**

@@ -13,11 +13,13 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.miraglio.R
 import com.miraglio.data.update.UpdateManager
-import com.miraglio.domain.format.ItalianFormat
 import com.miraglio.domain.update.ReleaseNotes
+import com.miraglio.ui.i18n.LocalDisplayFormat
 
 /**
  * Dialog dell'aggiornamento: un solo punto di ingresso, guidato dallo stato
@@ -52,9 +54,12 @@ fun UpdateDialog(
         title = {
             Text(
                 text = if (downloading) {
-                    "Scarico la versione ${release.displayVersion}"
+                    stringResource(
+                        R.string.update_dialog_title_downloading,
+                        release.displayVersion
+                    )
                 } else {
-                    "Aggiornamento disponibile"
+                    stringResource(R.string.update_dialog_title_available)
                 },
                 fontWeight = FontWeight.Bold
             )
@@ -62,28 +67,28 @@ fun UpdateDialog(
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
-                    text = "Versione ${release.displayVersion} (installata: $installedVersion)" +
-                        sizeSuffix(release.apkSizeBytes),
+                    text = stringResource(
+                        R.string.update_dialog_version_line,
+                        release.displayVersion,
+                        installedVersion
+                    ) + sizeSuffix(release.apkSizeBytes),
                     style = MaterialTheme.typography.bodyMedium
                 )
                 when (state) {
                     is UpdateManager.State.Downloading -> DownloadProgress(state.progress)
 
                     is UpdateManager.State.ReadyToInstall -> Text(
-                        text = "Scaricato. Premi Installa e conferma nella " +
-                            "schermata di sistema che si apre.",
+                        text = stringResource(R.string.update_dialog_ready),
                         style = MaterialTheme.typography.bodyMedium
                     )
 
                     is UpdateManager.State.PermissionRequired -> Text(
-                        text = "Android deve autorizzare Miraglio a installare " +
-                            "app: attiva la voce nella schermata appena aperta, " +
-                            "poi torna qui e premi Installa.",
+                        text = stringResource(R.string.update_dialog_permission),
                         style = MaterialTheme.typography.bodyMedium
                     )
 
                     is UpdateManager.State.Failed -> Text(
-                        text = "Non e' riuscito: ${state.message}",
+                        text = stringResource(R.string.update_dialog_failed, state.message),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.error
                     )
@@ -106,16 +111,16 @@ fun UpdateDialog(
         confirmButton = {
             when (state) {
                 is UpdateManager.State.Available -> TextButton(onClick = onDownload) {
-                    Text("Scarica e installa")
+                    Text(stringResource(R.string.action_download_install))
                 }
 
                 is UpdateManager.State.ReadyToInstall,
                 is UpdateManager.State.PermissionRequired -> TextButton(onClick = onInstall) {
-                    Text("Installa")
+                    Text(stringResource(R.string.action_install))
                 }
 
                 is UpdateManager.State.Failed -> TextButton(onClick = onDownload) {
-                    Text("Riprova")
+                    Text(stringResource(R.string.action_retry))
                 }
 
                 else -> Unit
@@ -123,7 +128,11 @@ fun UpdateDialog(
         },
         dismissButton = {
             TextButton(onClick = { if (downloading) onCancelDownload() else onPostpone() }) {
-                Text(if (downloading) "Annulla" else "Piu' tardi")
+                Text(
+                    stringResource(
+                        if (downloading) R.string.action_cancel else R.string.action_postpone
+                    )
+                )
             }
         }
     )
@@ -140,7 +149,7 @@ private fun DownloadProgress(progress: Float?) {
             modifier = Modifier.fillMaxWidth()
         )
         Text(
-            text = "${(progress * 100).toInt()}%",
+            text = stringResource(R.string.update_dialog_progress_percent, (progress * 100).toInt()),
             style = MaterialTheme.typography.bodySmall
         )
     }
@@ -156,5 +165,12 @@ private fun UpdateManager.State.releaseOrNull() = when (this) {
     else -> null
 }
 
-private fun sizeSuffix(bytes: Long): String =
-    if (bytes <= 0L) "" else " - ${ItalianFormat.number(bytes / 1_048_576.0, 1)} MB"
+@Composable
+private fun sizeSuffix(bytes: Long): String {
+    val format = LocalDisplayFormat.current
+    return if (bytes <= 0L) ""
+    else " - " + stringResource(
+        R.string.update_dialog_size,
+        format.number(bytes / 1_048_576.0, 1)
+    )
+}

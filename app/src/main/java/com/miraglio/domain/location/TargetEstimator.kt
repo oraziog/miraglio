@@ -35,5 +35,13 @@ object TargetEstimator {
         )
     }
 
+    /**
+     * Stima la distanza orizzontale tra due coordinate GPS in metri.
+     * Usa la formula Haversine per calcolare la distanza superficiale.
+     */
+    fun estimateTargetDistance(lat1: Float, lon1: Float, lat2: Float, lon2: Float): Float {
+        return Haversine.distanceMeters(lat1.toDouble(), lon1.toDouble(), lat2.toDouble(), lon2.toDouble()).toFloat()
+    }
+
     private const val BEARING_ERROR_DEG = 5.0
 }

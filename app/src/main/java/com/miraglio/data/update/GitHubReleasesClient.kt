@@ -1,7 +1,9 @@
 package com.miraglio.data.update
 
 import com.miraglio.BuildConfig
+import com.miraglio.R
 import com.miraglio.domain.update.ReleaseInfo
+import com.miraglio.domain.update.UpdateFailure
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.net.HttpURLConnection
@@ -48,7 +50,7 @@ class GitHubReleasesClient @Inject constructor() {
                     HttpURLConnection.HTTP_OK -> ReleaseJson.releaseFrom(
                         connection.inputStream.bufferedReader().use { it.readText() }
                     )
-                    else -> error("GitHub ha risposto $code")
+                    else -> throw UpdateFailure(R.string.update_github_http_error, listOf(code))
                 }
             } finally {
                 connection.disconnect()

@@ -3,6 +3,7 @@ package com.miraglio.ui.places
 import android.graphics.Bitmap
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -15,6 +16,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -22,15 +25,19 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Navigation
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -41,25 +48,32 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
-import androidx.compose.material3.ExperimentalMaterial3Api
+import com.miraglio.R
 import com.miraglio.data.places.PlaceKind
 import com.miraglio.data.share.QrCodeRenderer
-import com.miraglio.domain.format.ItalianFormat
 import com.miraglio.domain.location.GpsFix
 import com.miraglio.domain.share.ShareMessageComposer
+import com.miraglio.ui.i18n.LocalDisplayFormat
 import com.miraglio.ui.theme.OnPanel
 import com.miraglio.ui.theme.PanelContainer
 import java.util.Locale
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -68,6 +82,7 @@ fun PlaceDetailScreen(
     onNavigateBack: () -> Unit,
     viewModel: PlaceDetailViewModel = hiltViewModel()
 ) {
+    val format = LocalDisplayFormat.current
     val context = LocalContext.current
     val state by viewModel.state.collectAsState()
     val record = state.record
@@ -76,23 +91,54 @@ fun PlaceDetailScreen(
     var showDelete by remember { mutableStateOf(false) }
     var showQr by remember { mutableStateOf(false) }
 
+    // Tap lungo su una riga di coordinate: lat, lon negli appunti, senza
+    // l'accuratezza attaccata (i due numeri si incollano in un'altra app; il
+    // "±3 m" no). L'esito si dice con uno snackbar breve, in basso.
+    val clipboard = LocalClipboardManager.current
+    val snackbarHostState = remember { SnackbarHostState() }
+    val coroutineScope = rememberCoroutineScope()
+    val coordinatesCopiedMessage = stringResource(R.string.place_coordinates_copied)
+    val onCopyCoordinates: (GpsFix) -> Unit = { fix ->
+        clipboard.setText(
+            AnnotatedString(
+                String.format(Locale.US, "%.6f, %.6f", fix.latitudeDeg, fix.longitudeDeg)
+            )
+        )
+        coroutineScope.launch {
+            snackbarHostState.showSnackbar(coordinatesCopiedMessage)
+        }
+    }
+
     Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
                 title = {
-                    Text(record?.label ?: "Luogo", fontWeight = FontWeight.Bold)
+                    Text(
+                        record?.label ?: stringResource(R.string.place_untitled),
+                        fontWeight = FontWeight.Bold
+                    )
                 },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Indietro")
+                        Icon(
+                            Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = stringResource(R.string.action_back)
+                        )
                     }
                 },
                 actions = {
                     IconButton(onClick = { showRename = true }) {
-                        Icon(Icons.Default.Edit, contentDescription = "Rinomina")
+                        Icon(
+                            Icons.Default.Edit,
+                            contentDescription = stringResource(R.string.place_action_rename)
+                        )
                     }
                     IconButton(onClick = { showDelete = true }) {
-                        Icon(Icons.Default.Delete, contentDescription = "Elimina")
+                        Icon(
+                            Icons.Default.Delete,
+                            contentDescription = stringResource(R.string.action_delete)
+                        )
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -112,8 +158,10 @@ fun PlaceDetailScreen(
                 verticalArrangement = Arrangement.Center,
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                Text("Luogo non disponibile")
-                TextButton(onClick = onNavigateBack) { Text("Torna alla lista") }
+                Text(stringResource(R.string.place_detail_unavailable))
+                TextButton(onClick = onNavigateBack) {
+                    Text(stringResource(R.string.place_detail_back_to_list))
+                }
             }
             return@Scaffold
         }
@@ -132,7 +180,7 @@ fun PlaceDetailScreen(
                 Card(shape = RoundedCornerShape(16.dp)) {
                     Image(
                         bitmap = thumb.asImageBitmap(),
-                        contentDescription = "Foto del luogo",
+                        contentDescription = stringResource(R.string.place_detail_photo),
                         contentScale = ContentScale.FillWidth,
                         modifier = Modifier.fillMaxWidth()
                     )
@@ -151,7 +199,10 @@ fun PlaceDetailScreen(
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
                         Text(
-                            if (record.kind == PlaceKind.GPS) "Misura GPS senza foto" else "Foto non disponibile",
+                            stringResource(
+                                if (record.kind == PlaceKind.GPS) R.string.place_detail_gps_no_photo
+                                else R.string.place_detail_no_photo
+                            ),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
                         )
@@ -160,7 +211,7 @@ fun PlaceDetailScreen(
             }
             if (state.missingPhoto) {
                 Text(
-                    "Il file della foto è stato rimosso",
+                    stringResource(R.string.place_detail_photo_removed),
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.error
                 )
@@ -175,45 +226,122 @@ fun PlaceDetailScreen(
                     verticalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
                     record.distanceM?.let {
-                        DetailRow("Distanza", ItalianFormat.meters(it))
+                        DetailRow(stringResource(R.string.detail_distance), format.distance(it))
                     }
                     record.horizontalDistanceM?.let {
-                        DetailRow("Orizzontale", ItalianFormat.meters(it))
+                        DetailRow(
+                            stringResource(R.string.detail_horizontal),
+                            format.distance(it)
+                        )
                     }
                     record.walkedM?.let {
-                        DetailRow("Percorso a piedi", ItalianFormat.meters(it))
+                        DetailRow(stringResource(R.string.detail_walked), format.distance(it))
                     }
                     record.gpsErrorM?.let {
-                        DetailRow("Errore stimato", "±${ItalianFormat.meters(it)}")
+                        DetailRow(
+                            stringResource(R.string.detail_error),
+                            "±${format.accuracy(it)}"
+                        )
                     }
+                    // La dimensione misurata e' la grandezza del bersaglio, non
+                    // una distanza: metri o pollici, come sul campo della mira.
                     record.measuredSizeM?.let {
-                        DetailRow("Bersaglio", ItalianFormat.meters(it, 2))
+                        DetailRow(
+                            stringResource(R.string.detail_target),
+                            format.objectSize(it)
+                        )
                     }
                     record.bearingDeg?.let {
                         DetailRow(
-                            "Direzione",
-                            "${ShareMessageComposer.compassLabel(it)} " +
-                                "(${ItalianFormat.number(it, 0)}°)"
+                            stringResource(R.string.detail_direction),
+                            "${stringResource(ShareMessageComposer.compassLabelRes(it))} " +
+                                "(${format.number(it, 0)}°)"
                         )
                     }
                     record.pitchDeg?.let {
-                        DetailRow("Inclinazione", "${ItalianFormat.number(it, 1)}°")
+                        DetailRow(
+                            stringResource(R.string.detail_pitch),
+                            "${format.number(it, 1)}°"
+                        )
                     }
                     // Le coordinate restano col punto decimale: sono dati da
                     // incollare in mappe e altre app, non valori da leggere.
+                    // E si copiano col TAP LUNGO sulla riga: lat, lon soli,
+                    // pronti per essere incollati altrove.
                     record.targetFix?.let {
-                        DetailRow("Bersaglio", coordinateRow(it))
+                        CoordinateRow(stringResource(R.string.detail_target), it, onCopyCoordinates)
                     }
                     record.startFix?.let {
-                        DetailRow("Partenza", coordinateRow(it))
+                        CoordinateRow(stringResource(R.string.detail_start), it, onCopyCoordinates)
                     }
                     record.endFix?.let {
-                        DetailRow("Arrivo", coordinateRow(it))
+                        CoordinateRow(stringResource(R.string.detail_arrival), it, onCopyCoordinates)
                     }
                     record.shotFix?.let {
-                        DetailRow("Scatto", coordinateRow(it))
+                        CoordinateRow(stringResource(R.string.places_kind_shot), it, onCopyCoordinates)
                     }
-                    record.lensLabel?.let { DetailRow("Lente", it) }
+                    // Il tap lungo e' un gesto che non si vede: senza questa
+                    // riga nessuno lo scoprirebbe.
+                    if (record.hasAnyPin) {
+                        Text(
+                            stringResource(R.string.place_coordinates_hint),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = OnPanel.copy(alpha = 0.7f)
+                        )
+                    }
+                    record.lensLabel?.let { DetailRow(stringResource(R.string.detail_lens), it) }
+                }
+            }
+
+            // Nota libera: quello che dopo una settimana non si ricorda piu'
+            // ("facciata nord", "misurato con zoom 2x", "dubbio sulla distanza").
+            // Resta qui dentro: non entra nell'etichetta, ne' nella condivisione.
+            Card(shape = RoundedCornerShape(16.dp)) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(
+                        stringResource(R.string.place_notes_title),
+                        fontWeight = FontWeight.Bold,
+                        style = MaterialTheme.typography.titleMedium
+                    )
+                    OutlinedTextField(
+                        value = state.notesDraft,
+                        onValueChange = viewModel::onNotesChange,
+                        placeholder = { Text(stringResource(R.string.place_notes_hint)) },
+                        minLines = 3,
+                        maxLines = 6,
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                        keyboardActions = KeyboardActions(onDone = { viewModel.saveNotes() }),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        // "Salvato" resta finche' non si ritocca il campo: e' la
+                        // conferma che il testo qui sotto e' quello su disco.
+                        if (state.notesSaved) {
+                            Text(
+                                stringResource(R.string.places_action_saved),
+                                style = MaterialTheme.typography.labelLarge,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                        Button(
+                            onClick = viewModel::saveNotes,
+                            // Nessuna differenza dal disco: non c'e' niente da
+                            // scrivere, quindi non c'e' un pulsante premibile.
+                            enabled = state.notesDraft.trim() != record.notes,
+                            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
+                        ) {
+                            Text(stringResource(R.string.places_action_save))
+                        }
+                    }
                 }
             }
 
@@ -245,7 +373,7 @@ fun PlaceDetailScreen(
                 ) {
                     Icon(Icons.Default.Navigation, contentDescription = null)
                     Text(
-                        "Naviga",
+                        stringResource(R.string.place_action_navigate),
                         maxLines = 1,
                         softWrap = false
                     )
@@ -267,7 +395,7 @@ fun PlaceDetailScreen(
                     modifier = Modifier.weight(1f)
                 ) {
                     Text(
-                        "Condividi",
+                        stringResource(R.string.action_share),
                         maxLines = 1,
                         softWrap = false
                     )
@@ -311,16 +439,20 @@ fun PlaceDetailScreen(
     if (showDelete) {
         AlertDialog(
             onDismissRequest = { showDelete = false },
-            title = { Text("Eliminare il luogo?", fontWeight = FontWeight.Bold) },
-            text = { Text("Verranno rimossi la foto e i dati della misura.") },
+            title = {
+                Text(stringResource(R.string.place_delete_title), fontWeight = FontWeight.Bold)
+            },
+            text = { Text(stringResource(R.string.place_delete_message)) },
             confirmButton = {
                 TextButton(onClick = {
                     showDelete = false
                     viewModel.delete(onDone = onNavigateBack)
-                }) { Text("Elimina") }
+                }) { Text(stringResource(R.string.action_delete)) }
             },
             dismissButton = {
-                TextButton(onClick = { showDelete = false }) { Text("Annulla") }
+                TextButton(onClick = { showDelete = false }) {
+                    Text(stringResource(R.string.action_cancel))
+                }
             }
         )
     }
@@ -330,9 +462,16 @@ fun PlaceDetailScreen(
  * Riga di coordinate: numeri col punto decimale (si incollano in mappe e in
  * altre app) e accuratezza con la virgola, come tutto il resto del display.
  */
-private fun coordinateRow(fix: GpsFix): String =
-    String.format(Locale.US, "%.6f, %.6f", fix.latitudeDeg, fix.longitudeDeg) +
-        " (±${ItalianFormat.number(fix.accuracyM, 0)} m)"
+@Composable
+private fun coordinateRow(fix: GpsFix): String {
+    val format = LocalDisplayFormat.current
+    val accuracy = stringResource(
+        R.string.share_accuracy,
+        format.accuracy(fix.accuracyM, ShareMessageComposer.accuracyDecimals(fix.accuracyM))
+    )
+    return String.format(Locale.US, "%.6f, %.6f", fix.latitudeDeg, fix.longitudeDeg) +
+        " ($accuracy)"
+}
 
 @Composable
 private fun DetailRow(label: String, value: String) {
@@ -346,6 +485,42 @@ private fun DetailRow(label: String, value: String) {
         Text(label, style = MaterialTheme.typography.bodyMedium, color = OnPanel)
         Text(
             value,
+            style = MaterialTheme.typography.bodyMedium,
+            fontWeight = FontWeight.Medium,
+            color = OnPanel
+        )
+    }
+}
+
+/**
+ * Riga di coordinate con sopra il **tap lungo**, che le copia negli appunti.
+ *
+ * Il gesto non ha nessun indizio visivo (niente freccia, niente icona):
+ * per questo la card mette sotto una riga che lo dice, e il copia avviene
+ * sull'intera riga e non sulle cifre — mirare a due numeri da sei cifre non e'
+ * un bersaglio da usare fuori, con le mani fredde.
+ *
+ * Si copiano solo lat, lon (sei cifre, punto decimale): l'accuratezza resta
+ * scritta sulla riga ma non entra negli appunti, perche' chi copia le
+ * coordinate le vuole incollare in un'altra app, non dentro una frase.
+ */
+@Composable
+private fun CoordinateRow(
+    label: String,
+    fix: GpsFix,
+    onCopy: (GpsFix) -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .pointerInput(fix) {
+                detectTapGestures(onLongPress = { onCopy(fix) })
+            },
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Text(label, style = MaterialTheme.typography.bodyMedium, color = OnPanel)
+        Text(
+            coordinateRow(fix),
             style = MaterialTheme.typography.bodyMedium,
             fontWeight = FontWeight.Medium,
             color = OnPanel
@@ -376,7 +551,9 @@ private fun QrDialog(
     }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("QR del luogo", fontWeight = FontWeight.Bold) },
+        title = {
+            Text(stringResource(R.string.place_qr_title), fontWeight = FontWeight.Bold)
+        },
         text = {
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
@@ -386,24 +563,24 @@ private fun QrDialog(
                 when {
                     bmp != null -> Image(
                         bitmap = bmp.asImageBitmap(),
-                        contentDescription = "QR del luogo",
+                        contentDescription = stringResource(R.string.place_qr_title),
                         modifier = Modifier.size(260.dp)
                     )
                     content == null -> Text(
-                        "Nessun contenuto da codificare",
+                        stringResource(R.string.place_qr_no_content),
                         style = MaterialTheme.typography.bodyMedium
                     )
                     else -> CircularProgressIndicator(modifier = Modifier.size(48.dp))
                 }
                 if (content != null) {
                     Text(
-                        text = if (content.startsWith("https://maps.google.com")) {
-                            "Inquadralo con la fotocamera per aprire la mappa " +
-                                "(funziona anche da iPhone)."
-                        } else {
-                            "Questo luogo non ha un fix GPS: il QR contiene " +
-                                "il testo della misura."
-                        },
+                        text = stringResource(
+                            if (content.startsWith("https://maps.google.com")) {
+                                R.string.place_detail_qr_hint_map
+                            } else {
+                                R.string.place_detail_qr_hint_text
+                            }
+                        ),
                         style = MaterialTheme.typography.bodyMedium,
                         modifier = Modifier.padding(top = 12.dp)
                     )
@@ -414,10 +591,10 @@ private fun QrDialog(
             TextButton(
                 onClick = { qrBitmap?.let { QrShareHelper.shareQr(context, it) } },
                 enabled = qrBitmap != null
-            ) { Text("Condividi QR") }
+            ) { Text(stringResource(R.string.action_share_qr_title)) }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Chiudi") }
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_close)) }
         }
     )
 }
@@ -431,7 +608,9 @@ private fun RenameDialog(
     var text by remember { mutableStateOf(currentLabel) }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Rinomina luogo", fontWeight = FontWeight.Bold) },
+        title = {
+            Text(stringResource(R.string.place_rename_title), fontWeight = FontWeight.Bold)
+        },
         text = {
             OutlinedTextField(
                 value = text,
@@ -444,10 +623,10 @@ private fun RenameDialog(
             TextButton(
                 onClick = { onConfirm(text) },
                 enabled = text.isNotBlank()
-            ) { Text("Salva") }
+            ) { Text(stringResource(R.string.places_action_save)) }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Annulla") }
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) }
         }
     )
 }

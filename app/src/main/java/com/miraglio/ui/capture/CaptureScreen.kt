@@ -1,9 +1,8 @@
 package com.miraglio.ui.capture
 
-import com.miraglio.BuildConfig
-
 import android.Manifest
 import android.content.pm.PackageManager
+import android.content.res.Configuration
 import android.graphics.Bitmap
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -15,25 +14,26 @@ import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.foundation.layout.BoxWithConstraints
-import androidx.compose.foundation.layout.fillMaxHeight
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
-import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.Info
@@ -42,14 +42,16 @@ import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Place
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.ScreenLockPortrait
+import androidx.compose.material.icons.filled.ScreenRotation
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
@@ -78,24 +80,37 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
-import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
-import com.miraglio.domain.format.ItalianFormat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.miraglio.BuildConfig
+import com.miraglio.R
+import com.miraglio.domain.reticle.angularSize
+import com.miraglio.domain.reticle.pixelsPerMoa
+import com.miraglio.domain.reticle.reticleScale
 import com.miraglio.domain.share.ShareMessageComposer
 import com.miraglio.domain.vision.DetectionBox
+import com.miraglio.ui.i18n.LocalDisplayFormat
 import com.miraglio.ui.places.PlaceShareBar
 import com.miraglio.ui.places.ShareIntents
 import com.miraglio.ui.theme.LocalOutdoorMode
@@ -103,9 +118,6 @@ import com.miraglio.ui.theme.OnPanel
 import com.miraglio.ui.theme.OutdoorWhite
 import com.miraglio.ui.theme.OutdoorYellow
 import com.miraglio.ui.theme.PanelContainer
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.LifecycleEventObserver
-import androidx.lifecycle.LifecycleOwner
 import kotlin.math.abs
 import kotlin.math.min
 
@@ -124,8 +136,8 @@ fun CaptureScreen(
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val captureState by viewModel.captureState.collectAsState()
-    val heightInputCm by viewModel.heightInputCm.collectAsState()
-    val widthInputCm by viewModel.widthInputCm.collectAsState()
+    val heightInput by viewModel.heightInput.collectAsState()
+    val widthInput by viewModel.widthInput.collectAsState()
     val zoomRatio by viewModel.zoomRatio.collectAsState()
     val lineOrientation by viewModel.lineOrientation.collectAsState()
     val liveSnap by viewModel.liveSnap.collectAsState()
@@ -136,8 +148,10 @@ fun CaptureScreen(
     val result = captureState.result
     val frozenBitmap by viewModel.frozenBitmap.collectAsState()
     val frozen = frozenBitmap != null
-    // Stato del bottone in barra: la preferenza vera la legge MainActivity.
+    // Stato dei bottoni in barra: la preferenza vera del blocco rotazione la
+    // legge MainActivity, che e' l'unica che puo' applicarla.
     val outdoorMode by viewModel.outdoorMode.collectAsState()
+    val portraitLocked by viewModel.portraitLocked.collectAsState()
     val placeSaveState by viewModel.placeSaveState.collectAsState()
 
     var hasPermission by remember {
@@ -180,7 +194,11 @@ fun CaptureScreen(
             CenterAlignedTopAppBar(
                 title = {
                     Text(
-                        if (BuildConfig.VERSION_NAME.isNotEmpty()) "Miraglio v${BuildConfig.VERSION_NAME}" else "Miraglio",
+                        if (BuildConfig.VERSION_NAME.isNotEmpty()) {
+                            stringResource(R.string.app_title_version, BuildConfig.VERSION_NAME)
+                        } else {
+                            stringResource(R.string.app_name)
+                        },
                         fontWeight = FontWeight.Bold
                     )
                 },
@@ -191,14 +209,17 @@ fun CaptureScreen(
                     Box {
                         var menuOpen by remember { mutableStateOf(false) }
                         IconButton(onClick = { menuOpen = true }) {
-                            Icon(Icons.Default.Menu, contentDescription = "Menu")
+                            Icon(
+                                Icons.Default.Menu,
+                                contentDescription = stringResource(R.string.menu_open)
+                            )
                         }
                         DropdownMenu(
                             expanded = menuOpen,
                             onDismissRequest = { menuOpen = false }
                         ) {
                             DropdownMenuItem(
-                                text = { Text("Verifica distanza") },
+                                text = { Text(stringResource(R.string.measurement_title)) },
                                 leadingIcon = {
                                     Icon(Icons.Default.LocationOn, contentDescription = null)
                                 },
@@ -208,7 +229,7 @@ fun CaptureScreen(
                                 }
                             )
                             DropdownMenuItem(
-                                text = { Text("Luoghi memorizzati") },
+                                text = { Text(stringResource(R.string.places_title)) },
                                 leadingIcon = {
                                     Icon(Icons.Default.Place, contentDescription = null)
                                 },
@@ -218,7 +239,7 @@ fun CaptureScreen(
                                 }
                             )
                             DropdownMenuItem(
-                                text = { Text("Calibrazione") },
+                                text = { Text(stringResource(R.string.calibration_title)) },
                                 leadingIcon = {
                                     Icon(Icons.Default.Settings, contentDescription = null)
                                 },
@@ -228,7 +249,7 @@ fun CaptureScreen(
                                 }
                             )
                             DropdownMenuItem(
-                                text = { Text("Impostazioni") },
+                                text = { Text(stringResource(R.string.settings_title)) },
                                 leadingIcon = {
                                     Icon(Icons.Default.Tune, contentDescription = null)
                                 },
@@ -238,7 +259,7 @@ fun CaptureScreen(
                                 }
                             )
                             DropdownMenuItem(
-                                text = { Text("Come si usa") },
+                                text = { Text(stringResource(R.string.menu_how_to_use)) },
                                 leadingIcon = {
                                     Icon(Icons.Default.Info, contentDescription = null)
                                 },
@@ -251,6 +272,23 @@ fun CaptureScreen(
                     }
                 },
                 actions = {
+                    // Rotazione: un tocco per bloccare o liberare. Il blocco e'
+                    // quello che l'app fa da sempre (manifest in portrait); qui
+                    // si puo' togliere per guardare lo schermo in orizzontale.
+                    // L'icona mostra lo STATO, la descrizione l'AZIONE.
+                    IconButton(onClick = viewModel::togglePortraitLock) {
+                        Icon(
+                            imageVector = if (portraitLocked) {
+                                Icons.Default.ScreenLockPortrait
+                            } else {
+                                Icons.Default.ScreenRotation
+                            },
+                            contentDescription = stringResource(
+                                if (portraitLocked) R.string.capture_portrait_unlock
+                                else R.string.capture_portrait_lock
+                            )
+                        )
+                    }
                     // Toggle a un tocco: la modalita' outdoor si accende e si
                     // spegne da qui, senza passare dalle Impostazioni.
                     IconButton(onClick = viewModel::toggleOutdoorMode) {
@@ -260,11 +298,10 @@ fun CaptureScreen(
                             } else {
                                 Icons.Default.LightMode
                             },
-                            contentDescription = if (outdoorMode) {
-                                "Disattiva modalita' outdoor"
-                            } else {
-                                "Attiva modalita' outdoor (alto contrasto)"
-                            }
+                            contentDescription = stringResource(
+                                if (outdoorMode) R.string.capture_outdoor_off
+                                else R.string.capture_outdoor_on
+                            )
                         )
                     }
                 },
@@ -277,17 +314,20 @@ fun CaptureScreen(
             )
         }
     ) { padding ->
-        Column(
+        // In verticale i pannelli stanno sotto l'immagine; in orizzontale,
+        // dove lo schermo e' basso e largo, le stanno accanto: schiacciare
+        // l'inquadratura in una striscia alta due dita renderebbe inutile
+        // proprio la cosa che si sta guardando.
+        val landscape = LocalConfiguration.current.orientation ==
+            Configuration.ORIENTATION_LANDSCAPE
+        AimLayout(
+            landscape = landscape,
             modifier = Modifier
                 .fillMaxSize()
-                .padding(padding)
-        ) {
-            // Area immagine in alto: tutta la zona disponibile sopra i controlli
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f)
-            ) {
+                .padding(padding),
+            image = { imageModifier ->
+            // Area immagine: tutta la zona disponibile sopra (o accanto) ai controlli
+            Box(modifier = imageModifier) {
             if (hasPermission) {
                 val frozenImage = viewModel.frozenBitmap.collectAsState().value
                 if (frozenImage != null) {
@@ -304,6 +344,9 @@ fun CaptureScreen(
                         onSpreadCommit = viewModel::spreadLines,
                         onMoveFirst = viewModel::moveFirstLine,
                         onMoveSecond = viewModel::moveSecondLine,
+                        reticleFocalPx = captureState.reticleFocalPx,
+                        reticleTargetM = captureState.reticleTargetM,
+                        reticleDistanceM = result?.distanceMeters,
                         modifier = Modifier.fillMaxSize()
                     )
                 } else {
@@ -317,6 +360,9 @@ fun CaptureScreen(
                         LiveSnapOverlay(
                             snap = snap,
                             orientation = lineOrientation,
+                            reticleFocalPx = captureState.reticleFocalPx,
+                            reticleTargetM = captureState.reticleTargetM,
+                            reticleDistanceM = result?.distanceMeters,
                             modifier = Modifier.fillMaxSize()
                         )
                     }
@@ -324,11 +370,11 @@ fun CaptureScreen(
             } else {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text("Permesso camera richiesto")
+                        Text(stringResource(R.string.camera_permission_required))
                         androidx.compose.material3.Button(
                             onClick = { permissionLauncher.launch(Manifest.permission.CAMERA) }
                         ) {
-                            Text("Richiedi permesso")
+                            Text(stringResource(R.string.camera_request_permission))
                         }
                     }
                 }
@@ -348,12 +394,12 @@ fun CaptureScreen(
                         .padding(12.dp)
                 )
             }
-            } // chiude area immagine in alto
-
-            // Controlli sotto l'immagine
+            } // chiude area immagine
+            },
+            panels = { panelsModifier ->
+            // Controlli: sotto l'immagine, o accanto in orizzontale
             Column(
-                modifier = Modifier
-                    .fillMaxWidth()
+                modifier = panelsModifier
                     .padding(12.dp)
                     .imePadding()
             ) {
@@ -365,7 +411,13 @@ fun CaptureScreen(
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(FrozenControlsHeight),
+                            // In verticale l'altezza e' FISSA (vedi la costante);
+                            // in orizzontale il pannello prende lo spazio che
+                            // resta sotto i pulsanti, che e' tutto quello che c'e'.
+                            .then(
+                                if (landscape) Modifier.weight(1f)
+                                else Modifier.height(FrozenControlsHeight)
+                            ),
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         FrozenModeButtons(
@@ -378,16 +430,17 @@ fun CaptureScreen(
                         MeasureModePanel(
                             direction = measureDirection,
                             orientation = lineOrientation,
-                            heightInputCm = heightInputCm,
-                            widthInputCm = widthInputCm,
+                            heightInput = heightInput,
+                            widthInput = widthInput,
                             distanceInput = measureDistanceInput,
                             measuredSize = captureState.measuredSizeM,
                             distResult = result,
                             pitchDegrees = captureState.pitchAngleDegrees,
+                            shotMoved = captureState.shotMovedWarning,
                             hasLines = captureState.lineTopNorm != null &&
                                 captureState.lineBottomNorm != null,
-                            onHeightTextChanged = viewModel::setHeightInputCm,
-                            onWidthTextChanged = viewModel::setWidthInputCm,
+                            onHeightTextChanged = viewModel::setHeightInput,
+                            onWidthTextChanged = viewModel::setWidthInput,
                             onDistanceChanged = viewModel::setMeasureDistanceInput,
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -440,32 +493,197 @@ fun CaptureScreen(
                         .fillMaxWidth()
                         .padding(top = 8.dp)
                 )
+            } // chiude i pannelli
             }
-        }
+        )
     }
 
     if (showModeGuide) {
         AlertDialog(
             onDismissRequest = { showModeGuide = false },
-            title = { Text("Come misurare?", fontWeight = FontWeight.Bold) },
+            title = {
+                Text(stringResource(R.string.capture_how_to_title), fontWeight = FontWeight.Bold)
+            },
             text = {
                 Text(
-                    text = "1) Pizzica con due dita per zoomare sul bersaglio.\n\n" +
-                        "2) Premi Scatta e rileva: le linee si agganciano da sole al bersaglio.\n\n" +
-                        "3) Tocca per riselezionare, trascina a SX per spostare, a DX per " +
-                        "allargare/stringere.\n\n" +
-                        "Scrivi l'altezza nota del bersaglio in cm: è essenziale per la precisione.",
+                    text = stringResource(R.string.capture_how_to_body),
                     style = MaterialTheme.typography.bodyMedium
                 )
             },
             confirmButton = {
                 TextButton(onClick = { showModeGuide = false }) {
-                    Text("Ho capito")
+                    Text(stringResource(R.string.capture_how_to_ok))
                 }
             }
         )
     }
 }
+
+/**
+ * Disposizione della schermata di mira: l'immagine e i pannelli.
+ *
+ * In verticale i pannelli stanno **sotto** l'immagine (ed e' la disposizione
+ * di sempre); in orizzontale **accanto**, perche' li' l'altezza e' poca e
+ * l'immagine finirebbe in una striscia: il mirino si guarda, i pannelli si
+ * leggono, e le due cose non devono contendersi lo stesso spazio.
+ *
+ * Ai due blocchi si passa il [Modifier] della propria area: cosi' chi li
+ * scrive non deve sapere in che verso e' girato il telefono.
+ */
+@Composable
+private fun AimLayout(
+    landscape: Boolean,
+    modifier: Modifier = Modifier,
+    image: @Composable (Modifier) -> Unit,
+    panels: @Composable (Modifier) -> Unit
+) {
+    if (landscape) {
+        Row(modifier = modifier) {
+            // L'immagine prende la parte piu' larga: e' quella che si guarda.
+            image(Modifier.weight(1.45f).fillMaxHeight())
+            panels(Modifier.weight(1f).fillMaxHeight())
+        }
+    } else {
+        Column(modifier = modifier) {
+            image(Modifier.fillMaxWidth().weight(1f))
+            panels(Modifier.fillMaxWidth())
+        }
+    }
+}
+
+/**
+ * Tacche di riferimento sul mirino, in MOA e in pollici a 20 iarde.
+ *
+ * Si disegnano **sull'immagine** e non su un pannello perche' servono a
+ * confrontare il bersaglio con il proprio mirino guardando nello stesso posto:
+ * la scala e' una fila di tacche sul bordo sinistro, con il centro dell'immagine
+ * come zero, e accanto c'e' scritto quanto vale ogni tacca e quanto copre il
+ * bersaglio. Le due unita' sono sempre scritte insieme: i mirini sono tarati in
+ * pollici a 20 iarde, i calcoli si fanno in MOA, e sono lo stesso angolo.
+ *
+ * Il passo delle tacche non e' fisso (vedi [reticleScale]): a 1x una tacca da
+ * 1 MOA sarebbe un decimo di pixel. Meglio poche tacche dichiarate che una
+ * scala fine che non misura niente.
+ */
+@Composable
+private fun ReticleScaleLayer(
+    focalPx: Float?,
+    targetSizeM: Float?,
+    distanceM: Float?,
+    frameWidth: Int,
+    frameHeight: Int,
+    displayW: Float,
+    displayH: Float,
+    offsetY: Float,
+    modifier: Modifier = Modifier
+) {
+    val focal = focalPx?.takeIf { it > 0f && it.isFinite() } ?: return
+    val target = targetSizeM?.takeIf { it > 0f } ?: return
+    val distance = distanceM?.takeIf { it > 0f } ?: return
+    if (frameWidth <= 0 || frameHeight <= 0 || displayW <= 0f || displayH <= 0f) return
+
+    val format = LocalDisplayFormat.current
+    val density = LocalDensity.current
+    val angolo = remember(target, distance) { angularSize(target, distance) } ?: return
+    // Pixel di SCHERMO per MOA: la focale e' in pixel del frame di analisi,
+    // quindi va riportata alla scala con cui il frame e' disegnato
+    // (displayH / frameHeight).
+    val pxPerMoa = remember(focal, displayH, frameHeight) {
+        pixelsPerMoa(focal * (displayH / frameHeight))
+    } ?: return
+    val scala = remember(pxPerMoa, density) {
+        reticleScale(pxPerMoa, with(density) { MIN_RETICLE_STEP.toPx() })
+    } ?: return
+
+    val centerY = offsetY + displayH / 2f
+    val topY = offsetY
+    val bottomY = offsetY + displayH
+    // Quante tacche stanno nell'immagine, da una parte e dall'altra.
+    val kMax = ((displayH / 2f) / scala.stepPx).toInt() + 1
+    val passoTxt = format.number(scala.stepMoa.toFloat(), 0)
+    val passoPolliciTxt = format.number(scala.stepInchesAt20Yards, 1)
+    val bersaglioMoaTxt = format.number(angolo.moa, 0)
+    val bersaglioPolliciTxt = format.number(angolo.inchesAt20Yards, 1)
+    val labelStyle = MaterialTheme.typography.labelSmall.copy(
+        fontSize = 10.sp,
+        // Bordo scuro attorno al testo: le tacche finiscono sopra l'immagine,
+        // che puo' essere chiara o scura.
+        shadow = Shadow(color = Color(0xE6000000), blurRadius = 3f)
+    )
+
+    Box(modifier = modifier) {
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            val dark = Color(0xCC000000)
+            val light = Color(0xFFFFFFFF)
+            val shortDx = 12.dp.toPx()
+            val longDx = 22.dp.toPx()
+            val centerDx = 30.dp.toPx()
+            for (k in -kMax..kMax) {
+                val y = centerY + k * scala.stepPx
+                if (y < topY || y > bottomY) continue
+                val dx = when {
+                    k == 0 -> centerDx
+                    k % LONG_TICK_EVERY == 0 -> longDx
+                    else -> shortDx
+                }
+                // Sotto il tratto chiaro c'e' un tratto scuro: e' la stessa
+                // soluzione delle linee di misura, e serve a restare leggibili
+                // su un bersaglio bianco e su un bosco scuro.
+                drawLine(dark, Offset(0f, y), Offset(dx, y), strokeWidth = 5f)
+                drawLine(light, Offset(0f, y), Offset(dx, y), strokeWidth = 2f)
+            }
+        }
+        // Etichette delle sole tacche lunghe: il numero che si conta a occhio.
+        // Il valore e' la distanza dallo zero, in MOA (il segno no: la scala e'
+        // simmetrica, come nei mirini).
+        for (k in -kMax..kMax) {
+            if (k % LONG_TICK_EVERY != 0) continue
+            val y = centerY + k * scala.stepPx
+            if (y < topY || y > bottomY) continue
+            Text(
+                text = format.number(abs(k * scala.stepMoa).toFloat(), 0),
+                style = labelStyle,
+                color = Color.White,
+                modifier = Modifier.offset(
+                    x = 26.dp,
+                    y = with(density) { (y - topY).toDp() } - 7.dp
+                )
+            )
+        }
+        // Legenda: cosa vale una tacca e quanto copre il bersaglio, in
+        // entrambe le unita'.
+        Surface(
+            color = Color(0xB3000000),
+            shape = RoundedCornerShape(6.dp),
+            modifier = Modifier
+                .align(Alignment.TopStart)
+                .padding(6.dp)
+        ) {
+            Column(modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp)) {
+                Text(
+                    text = stringResource(R.string.reticle_scale_label, passoTxt, passoPolliciTxt),
+                    style = labelStyle,
+                    color = Color.White
+                )
+                Text(
+                    text = stringResource(
+                        R.string.reticle_target_label,
+                        bersaglioMoaTxt,
+                        bersaglioPolliciTxt
+                    ),
+                    style = labelStyle,
+                    color = if (LocalOutdoorMode.current) OutdoorYellow else FosforoGreen
+                )
+            }
+        }
+    }
+}
+
+/** Distanza minima fra due tacche sullo schermo: sotto si contano male. */
+private val MIN_RETICLE_STEP = 26.dp
+
+/** Ogni quante tacche si scrive il numero (e si allunga il tratto). */
+private const val LONG_TICK_EVERY = 5
 
 @Composable
 private fun ShowCameraPreview(
@@ -518,6 +736,9 @@ private fun LineeFrozenOverlay(
     onSpreadCommit: (Float) -> Unit,
     onMoveFirst: (Float) -> Unit,
     onMoveSecond: (Float) -> Unit,
+    reticleFocalPx: Float?,
+    reticleTargetM: Float?,
+    reticleDistanceM: Float?,
     modifier: Modifier = Modifier
 ) {
     // Colori delle linee sopra l'immagine: in outdoor la primaria diventa
@@ -535,6 +756,11 @@ private fun LineeFrozenOverlay(
     var spreadAcc by remember { mutableFloatStateOf(0f) }
     var firstAcc by remember { mutableFloatStateOf(0f) }
     var secondAcc by remember { mutableFloatStateOf(0f) }
+    // Azzeramento in un posto solo: serve a inizio gesto, a fine gesto e su
+    // gesto ANNULLATO. Su un gesto annullato (secondo dito, gesto di sistema)
+    // senza azzeramento le linee restano disegnate a offset dal valore vero
+    // anche se il ViewModel non ha ricevuto nessuno spostamento.
+    val resetDrag = { panAcc = 0f; spreadAcc = 0f; firstAcc = 0f; secondAcc = 0f }
     val dispTop = topNorm?.let { (it + panAcc + firstAcc - spreadAcc / 2f).coerceIn(0f, 1f) }
     val dispBottom = bottomNorm?.let { (it + panAcc + secondAcc + spreadAcc / 2f).coerceIn(0f, 1f) }
     val horizontal = orientation == LineOrientation.HORIZONTAL
@@ -556,7 +782,7 @@ private fun LineeFrozenOverlay(
 
         Image(
             bitmap = bitmap.asImageBitmap(),
-            contentDescription = "Fermo immagine linee",
+            contentDescription = stringResource(R.string.capture_frozen_lines),
             modifier = Modifier.fillMaxSize(),
             contentScale = ContentScale.Fit
         )
@@ -588,14 +814,15 @@ private fun LineeFrozenOverlay(
                     val px = 48.dp.toPx()
                     if (horizontal) {
                         detectVerticalDragGestures(
-                            onDragStart = { panAcc = 0f; spreadAcc = 0f; firstAcc = 0f; secondAcc = 0f },
+                            onDragStart = { resetDrag() },
                             onDragEnd = {
                                 if (firstAcc != 0f) onMoveFirst(firstAcc)
                                 else if (secondAcc != 0f) onMoveSecond(secondAcc)
                                 else if (spreadAcc != 0f) onSpreadCommit(spreadAcc)
                                 else if (panAcc != 0f) onPanCommit(panAcc)
-                                panAcc = 0f; spreadAcc = 0f; firstAcc = 0f; secondAcc = 0f
+                                resetDrag()
                             },
+                            onDragCancel = { resetDrag() },
                             onVerticalDrag = { change, dragAmount ->
                                 val dH = displayHRef.value
                                 if (dH <= 0f) return@detectVerticalDragGestures
@@ -613,14 +840,15 @@ private fun LineeFrozenOverlay(
                         )
                     } else {
                         detectHorizontalDragGestures(
-                            onDragStart = { panAcc = 0f; spreadAcc = 0f; firstAcc = 0f; secondAcc = 0f },
+                            onDragStart = { resetDrag() },
                             onDragEnd = {
                                 if (firstAcc != 0f) onMoveFirst(firstAcc)
                                 else if (secondAcc != 0f) onMoveSecond(secondAcc)
                                 else if (spreadAcc != 0f) onSpreadCommit(spreadAcc)
                                 else if (panAcc != 0f) onPanCommit(panAcc)
-                                panAcc = 0f; spreadAcc = 0f; firstAcc = 0f; secondAcc = 0f
+                                resetDrag()
                             },
+                            onDragCancel = { resetDrag() },
                             onHorizontalDrag = { change, dragAmount ->
                                 val dW = displayWRef.value
                                 if (dW <= 0f) return@detectHorizontalDragGestures
@@ -701,6 +929,21 @@ private fun LineeFrozenOverlay(
                 }
             }
         }
+
+        // Tacche del mirino sopra l'immagine, con la stessa geometria del canvas
+        // qui sopra (stesse variabili di scala e di offset): cosi' tacche e
+        // linee di misura non possono disallinearsi.
+        ReticleScaleLayer(
+            focalPx = reticleFocalPx,
+            targetSizeM = reticleTargetM,
+            distanceM = reticleDistanceM,
+            frameWidth = bitmap.width,
+            frameHeight = bitmap.height,
+            displayW = displayW,
+            displayH = displayH,
+            offsetY = offsetY,
+            modifier = Modifier.fillMaxSize()
+        )
     }
 }
 
@@ -708,6 +951,9 @@ private fun LineeFrozenOverlay(
 private fun LiveSnapOverlay(
     snap: LiveSnap,
     orientation: LineOrientation,
+    reticleFocalPx: Float?,
+    reticleTargetM: Float?,
+    reticleDistanceM: Float?,
     modifier: Modifier = Modifier
 ) {
     val horizontal = orientation == LineOrientation.HORIZONTAL
@@ -732,31 +978,22 @@ private fun LiveSnapOverlay(
         Canvas(modifier = Modifier.fillMaxSize()) {
             if (size.width <= 0f || size.height <= 0f) return@Canvas
             val box = snap.box
-                        // Quadrato YOLO: perimetro attorno al box primario (paglione o targa)
-                        val dl = offsetX + box.left.coerceIn(0f, 1f) * displayW
-                        val dt = offsetY + box.top.coerceIn(0f, 1f) * displayH
-                        val dr = offsetX + box.right.coerceIn(0f, 1f) * displayW
-                        val db = offsetY + box.bottom.coerceIn(0f, 1f) * displayH
-                        if (dr > dl && db > dt) {
-                            drawRect(
-                                color = primaryLine,
-                                topLeft = Offset(dl, dt),
-                                size = Size(dr - dl, db - dt),
-                                style = Stroke(width = 2.dp.toPx())
-                            )
-                        }
-                        val rl = offsetX + box.left.coerceIn(0f, 1f) * displayW
-                        val rt = offsetY + box.top.coerceIn(0f, 1f) * displayH
-                        val rw = (box.right.coerceIn(0f, 1f) - box.left.coerceIn(0f, 1f)) * displayW
-                        val rh = (box.bottom.coerceIn(0f, 1f) - box.top.coerceIn(0f, 1f)) * displayH
-                        if (rw > 0f && rh > 0f) {
-                            drawRect(
-                                color = primaryLine,
-                                topLeft = Offset(rl, rt),
-                                size = Size(rw, rh),
-                                style = Stroke(width = 2.dp.toPx())
-                            )
-                        }
+            // Quadrato YOLO: perimetro attorno al box primario (paglione o targa).
+            // Un solo rect: i due rami che c'erano prima (dl/dt/dr/db e poi
+            // rl/rt/rw/rh) calcolavano lo stesso rettangolo e lo disegnavano
+            // due volte, con lo stesso colore e lo stesso spessore.
+            val dl = offsetX + box.left.coerceIn(0f, 1f) * displayW
+            val dt = offsetY + box.top.coerceIn(0f, 1f) * displayH
+            val dr = offsetX + box.right.coerceIn(0f, 1f) * displayW
+            val db = offsetY + box.bottom.coerceIn(0f, 1f) * displayH
+            if (dr > dl && db > dt) {
+                drawRect(
+                    color = primaryLine,
+                    topLeft = Offset(dl, dt),
+                    size = Size(dr - dl, db - dt),
+                    style = Stroke(width = 2.dp.toPx())
+                )
+            }
             if (horizontal && displayH > 0f) {
                 val yTop = offsetY + box.top.coerceIn(0f, 1f) * displayH
                 val yBottom = offsetY + box.bottom.coerceIn(0f, 1f) * displayH
@@ -769,6 +1006,21 @@ private fun LiveSnapOverlay(
                 drawLine(secondaryLine, Offset(xRight, 0f), Offset(xRight, size.height), 3f)
             }
         }
+
+        // Tacche del mirino anche in mira live (dove c'e' una distanza stimata:
+        // riconoscimento o due tap). Senza distanza non si disegna niente, ed e'
+        // il caso normale in modalita' LINEE prima del fermo immagine.
+        ReticleScaleLayer(
+            focalPx = reticleFocalPx,
+            targetSizeM = reticleTargetM,
+            distanceM = reticleDistanceM,
+            frameWidth = snap.frameWidth,
+            frameHeight = snap.frameHeight,
+            displayW = displayW,
+            displayH = displayH,
+            offsetY = offsetY,
+            modifier = Modifier.fillMaxSize()
+        )
     }
 }
 
@@ -805,6 +1057,7 @@ private fun CaptureActionBar(
     onFreezeToggle: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val format = LocalDisplayFormat.current
     Card(
         modifier = modifier,
         colors = CardDefaults.cardColors(containerColor = Color(0xC7000000))
@@ -821,7 +1074,10 @@ private fun CaptureActionBar(
                     onClick = onLineeCapture,
                     modifier = Modifier.weight(1f)
                 ) {
-                    Text("Scatta fermo immagine", style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        stringResource(R.string.capture_freeze_frame),
+                        style = MaterialTheme.typography.titleMedium
+                    )
                 }
                 // Fattore di moltiplicazione zoom corrente, a destra del bottone
                 Surface(
@@ -829,7 +1085,10 @@ private fun CaptureActionBar(
                     shape = RoundedCornerShape(8.dp)
                 ) {
                     Text(
-                        text = "${ItalianFormat.number(zoomRatio, 1)}x",
+                        text = stringResource(
+                            R.string.zoom_level,
+                            format.number(zoomRatio, 1)
+                        ),
                         color = Color.White,
                         fontWeight = FontWeight.Bold,
                         style = MaterialTheme.typography.titleMedium,
@@ -848,13 +1107,13 @@ private fun CaptureActionBar(
                     onClick = onResetLines,
                     modifier = Modifier.weight(1f)
                 ) {
-                    Text("Azzera linee")
+                    Text(stringResource(R.string.capture_reset_lines))
                 }
                 FilledTonalButton(
                     onClick = onFreezeToggle,
                     modifier = Modifier.weight(1f)
                 ) {
-                    Text("Live")
+                    Text(stringResource(R.string.capture_live))
                 }
             }
         }
@@ -884,6 +1143,7 @@ private fun ResultPanel(
     bearingDegrees: Float? = null
 
 ) {
+    val format = LocalDisplayFormat.current
     Card(
         modifier = modifier,
         colors = CardDefaults.cardColors(
@@ -893,9 +1153,12 @@ private fun ResultPanel(
         Column(modifier = Modifier.padding(12.dp)) {
             Text(
                 text = if (result != null) {
-                    "Distanza: ${ItalianFormat.meters(result.distanceMeters)}"
+                    stringResource(
+                        R.string.capture_distance,
+                        format.distance(result.distanceMeters)
+                    )
                 } else {
-                    "Inquadra il bersaglio, poi scatta fermo immagine"
+                    stringResource(R.string.capture_aim_hint)
                 },
                 fontWeight = FontWeight.Bold,
                 style = MaterialTheme.typography.titleMedium,
@@ -903,19 +1166,28 @@ private fun ResultPanel(
             )
             if (result != null) {
                 Text(
-                    text = "Angolo: ${ItalianFormat.number(result.pitchAngleDegrees, 1)}°",
+                    text = stringResource(
+                        R.string.capture_angle,
+                        format.number(result.pitchAngleDegrees, 1)
+                    ),
                     style = MaterialTheme.typography.bodyMedium,
                     color = OnPanel
                 )
                 Text(
-                    text = "Distanza compensata: ${ItalianFormat.meters(result.horizontalDistanceM)}",
+                    text = stringResource(
+                        R.string.capture_compensated,
+                        format.distance(result.horizontalDistanceM)
+                    ),
                     style = MaterialTheme.typography.bodyMedium,
                     color = OnPanel
                 )
                 bearingDegrees?.let { bearing ->
                     Text(
-                        text = "Direzione: ${ShareMessageComposer.compassLabel(bearing)} " +
-                            "(${ItalianFormat.number(bearing, 0)}°)",
+                        text = stringResource(
+                            R.string.capture_direction,
+                            stringResource(ShareMessageComposer.compassLabelRes(bearing)),
+                            format.number(bearing, 0)
+                        ),
                         style = MaterialTheme.typography.bodyMedium,
                         color = OnPanel
                     )
@@ -942,22 +1214,31 @@ private fun panelFieldColors() = OutlinedTextFieldDefaults.colors(
 private fun MeasureModePanel(
     direction: MeasureDirection,
     orientation: LineOrientation,
-    heightInputCm: String,
-    widthInputCm: String,
+    heightInput: String,
+    widthInput: String,
     distanceInput: String,
     measuredSize: Float?,
     distResult: MeasureResult?,
     pitchDegrees: Float?,
+    shotMoved: Boolean,
     hasLines: Boolean,
     onHeightTextChanged: (String) -> Unit,
     onWidthTextChanged: (String) -> Unit,
     onDistanceChanged: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val format = LocalDisplayFormat.current
     val horizontal = orientation == LineOrientation.HORIZONTAL
-    val sizeLabel = if (horizontal) "Altezza" else "Larghezza"
+    val sizeLabel = stringResource(
+        if (horizontal) R.string.measure_height else R.string.measure_width
+    )
     val angleSuffix = if (pitchDegrees != null) {
-        "  \u2022  Angolo: ${ItalianFormat.number(pitchDegrees, 1)}°"
+        // Spazi e separatore restano qui: AAPT toglie gli spazi ai bordi di un
+        // valore in un file di stringhe.
+        "  \u2022  " + stringResource(
+            R.string.capture_angle_suffix,
+            format.number(pitchDegrees, 1)
+        )
     } else {
         ""
     }
@@ -976,12 +1257,35 @@ private fun MeasureModePanel(
                 .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
+            // In cima, sopra ogni numero: se il telefono si e' mosso fra la
+            // mira e lo scatto, le linee sono su un'altra inquadratura e il
+            // numero qui sotto puo' mentire. Il monito viene PRIMA del dato,
+            // non dopo: deve leggerlo chi legge la distanza.
+            if (shotMoved) {
+                Text(
+                    text = stringResource(R.string.capture_shot_moved_warning),
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
             when (direction) {
                 MeasureDirection.DISTANZA -> {
                     OutlinedTextField(
-                        value = if (horizontal) heightInputCm else widthInputCm,
+                        value = if (horizontal) heightInput else widthInput,
                         onValueChange = if (horizontal) onHeightTextChanged else onWidthTextChanged,
-                        label = { Text(if (horizontal) "Altezza nota (cm)" else "Larghezza nota (cm)") },
+                        label = {
+                            Text(
+                                stringResource(
+                                    if (horizontal) R.string.capture_known_height
+                                    else R.string.capture_known_width,
+                                    // L'unita' la decide il sistema scelto: il
+                                    // campo si chiama "(cm)" o "(in)".
+                                    format.sizeUnit
+                                )
+                            )
+                        },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                         singleLine = true,
                         textStyle = MaterialTheme.typography.bodyMedium,
@@ -989,15 +1293,17 @@ private fun MeasureModePanel(
                         modifier = Modifier.fillMaxWidth(),
                         colors = panelFieldColors()
                     )
+                    val distText = if (distResult != null) {
+                        stringResource(
+                            R.string.capture_distance,
+                            format.distance(distResult.distanceMeters)
+                        )
+                    } else {
+                        stringResource(R.string.capture_size_hint)
+                    }
                     Text(
                         text = buildString {
-                            append(
-                                if (distResult != null) {
-                                    "Distanza: ${ItalianFormat.meters(distResult.distanceMeters)}"
-                                } else {
-                                    "Scatta e posiziona le linee sul bersaglio"
-                                }
-                            )
+                            append(distText)
                             if (distResult != null) append(angleSuffix)
                         },
                         fontWeight = FontWeight.Bold,
@@ -1006,8 +1312,10 @@ private fun MeasureModePanel(
                     )
                     if (distResult != null) {
                         Text(
-                            text = "Distanza compensata: " +
-                                ItalianFormat.meters(distResult.horizontalDistanceM),
+                            text = stringResource(
+                                R.string.capture_compensated,
+                                format.distance(distResult.horizontalDistanceM)
+                            ),
                             style = MaterialTheme.typography.bodySmall,
                             color = OnPanel
                         )
@@ -1017,7 +1325,11 @@ private fun MeasureModePanel(
                     OutlinedTextField(
                         value = distanceInput,
                         onValueChange = onDistanceChanged,
-                        label = { Text("Distanza nota (m)") },
+                        label = {
+                            Text(
+                                stringResource(R.string.capture_known_distance, format.distanceUnit)
+                            )
+                        },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                         singleLine = true,
                         textStyle = MaterialTheme.typography.bodyMedium,
@@ -1025,9 +1337,10 @@ private fun MeasureModePanel(
                         modifier = Modifier.fillMaxWidth(),
                         colors = panelFieldColors()
                     )
+                    val sizeText = sizeResultText(sizeLabel, distanceInput, hasLines, measuredSize)
                     Text(
                         text = buildString {
-                            append(sizeResultText(sizeLabel, distanceInput, hasLines, measuredSize))
+                            append(sizeText)
                             if (measuredSize != null) append(angleSuffix)
                         },
                         fontWeight = FontWeight.Bold,
@@ -1059,8 +1372,10 @@ private fun FrozenModeButtons(
             modifier = Modifier.weight(1f)
         ) {
             Text(
-                if (direction == MeasureDirection.DISTANZA) "Misurazione distanza"
-                else "Misurazione altezza",
+                stringResource(
+                    if (direction == MeasureDirection.DISTANZA) R.string.capture_measure_distance
+                    else R.string.capture_measure_height
+                ),
                 style = MaterialTheme.typography.labelMedium,
                 maxLines = 1
             )
@@ -1073,17 +1388,21 @@ private fun FrozenModeButtons(
                 Icons.Default.Refresh,
                 // Il bottone mostra l'AZIONE (cosa diventera'), non lo stato:
                 // con linee orizzontali premendo si passa alle verticali.
-                contentDescription = if (orientation == LineOrientation.HORIZONTAL) {
-                    "Passa a linee verticali"
-                } else {
-                    "Passa a linee orizzontali"
-                },
+                contentDescription = stringResource(
+                    if (orientation == LineOrientation.HORIZONTAL) {
+                        R.string.capture_switch_to_vertical
+                    } else {
+                        R.string.capture_switch_to_horizontal
+                    }
+                ),
                 modifier = Modifier.size(18.dp)
             )
             Spacer(modifier = Modifier.width(4.dp))
             Text(
-                if (orientation == LineOrientation.HORIZONTAL) "\u2192 Linee Verticali"
-                else "\u2192 Linee Orizzontali",
+                stringResource(
+                    if (orientation == LineOrientation.HORIZONTAL) R.string.capture_lines_vertical
+                    else R.string.capture_lines_horizontal
+                ),
                 style = MaterialTheme.typography.labelMedium,
                 maxLines = 1
             )
@@ -1125,17 +1444,34 @@ private val MeasureButtonPadding = PaddingValues(horizontal = 8.dp, vertical = 4
  * finire tagliato.
  */
 
+@Composable
 private fun sizeResultText(
     sizeLabel: String,
     distanceInput: String,
     hasLines: Boolean,
     measuredSize: Float?
-): String = when {
-    distanceInput.replace(',', '.').toFloatOrNull()?.takeIf { it > 0f } == null ->
-        "Inserisci la distanza (m)"
-    !hasLines -> "Posiziona le linee sui bordi dell'oggetto"
-    measuredSize == null -> "Misura non disponibile"
-    measuredSize >= 0.99f -> "$sizeLabel: ${ItalianFormat.meters(measuredSize, 2)}"
-    else -> "$sizeLabel: ${ItalianFormat.number(measuredSize * 100, 1)} cm"
+): String {
+    val format = LocalDisplayFormat.current
+    return when {
+        // La regola di cosa e' un numero valido (virgola, punto, positivo) sta
+        // nel formattatore: qui si chiede solo se il campo e' compilato.
+        format.parseDistance(distanceInput) == null ->
+            stringResource(R.string.capture_enter_distance, format.distanceUnit)
+        !hasLines -> stringResource(R.string.capture_place_lines)
+        measuredSize == null -> stringResource(R.string.measurement_unavailable)
+        // Sopra il metro la dimensione si legge in metri (o in pollici), sotto
+        // in centimetri: l'unita' la sceglie il formattatore, e la stringa non
+        // ne nomina nessuna.
+        measuredSize >= 0.99f -> stringResource(
+            R.string.capture_size_value,
+            sizeLabel,
+            format.objectSize(measuredSize)
+        )
+        else -> stringResource(
+            R.string.capture_size_value,
+            sizeLabel,
+            format.objectSizeSmall(measuredSize)
+        )
+    }
 }
 

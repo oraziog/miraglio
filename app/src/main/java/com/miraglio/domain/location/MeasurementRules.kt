@@ -1,6 +1,18 @@
 package com.miraglio.domain.location
 
 import android.location.Location
+import kotlin.math.sqrt
+
+/**
+ * Errore combinato di due fix: i due raggi di confidenza si combinano in
+ * quadratura (due fix da ±4 m danno ~±5,7 m sulla distanza fra di essi).
+ *
+ * E' la regola con cui i Luoghi dichiarano il proprio errore, e da adesso e'
+ * l'unica implementazione: l'errore mostrato in cronologia e quello del
+ * dettaglio non possono diventare due numeri diversi per lo stesso piazzo.
+ */
+fun combinedFixError(startAccuracyM: Float, endAccuracyM: Float): Float =
+    sqrt(startAccuracyM * startAccuracyM + endAccuracyM * endAccuracyM)
 
 /**
  * Fix GPS ridotto ai valori che servono alla misura a piedi. Non e' un

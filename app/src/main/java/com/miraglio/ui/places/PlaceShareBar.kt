@@ -29,8 +29,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.miraglio.R
 import com.miraglio.data.places.PlaceSaveState
 import com.miraglio.data.share.QrCodeRenderer
 import com.miraglio.ui.theme.PanelContainer
@@ -104,20 +106,22 @@ fun PlaceShareBar(
                                 strokeWidth = 2.dp
                             )
                             Text(
-                                "  Salvo...",
+                                // I due spazi tengono il testo allineato allo
+                                // spinner che sta a sinistra, sulla stessa riga.
+                                "  " + stringResource(R.string.places_action_saving),
                                 style = MaterialTheme.typography.labelLarge,
                                 maxLines = 1,
                                 softWrap = false
                             )
                         }
                         PlaceSaveState.SAVED -> Text(
-                            "Salvato ✓",
+                            stringResource(R.string.places_action_saved),
                             style = MaterialTheme.typography.labelLarge,
                             maxLines = 1,
                             softWrap = false
                         )
                         else -> Text(
-                            "Salva",
+                            stringResource(R.string.places_action_save),
                             style = MaterialTheme.typography.labelLarge,
                             maxLines = 1,
                             softWrap = false
@@ -134,7 +138,7 @@ fun PlaceShareBar(
                 modifier = Modifier.weight(1f)
             ) {
                 Text(
-                    "Condividi",
+                    stringResource(R.string.action_share),
                     style = MaterialTheme.typography.labelLarge,
                     maxLines = 1,
                     softWrap = false
@@ -147,7 +151,7 @@ fun PlaceShareBar(
                 modifier = Modifier.weight(1f)
             ) {
                 Text(
-                    "QR",
+                    stringResource(R.string.places_action_qr),
                     style = MaterialTheme.typography.labelLarge,
                     maxLines = 1,
                     softWrap = false
@@ -159,7 +163,9 @@ fun PlaceShareBar(
     if (showQr) {
         AlertDialog(
             onDismissRequest = { showQr = false },
-            title = { Text("Pin della posizione", fontWeight = FontWeight.Bold) },
+            title = {
+                Text(stringResource(R.string.places_qr_dialog_title), fontWeight = FontWeight.Bold)
+            },
             text = {
                 Column(
                     horizontalAlignment = Alignment.CenterHorizontally,
@@ -169,18 +175,18 @@ fun PlaceShareBar(
                     if (bmp != null) {
                         Image(
                             bitmap = bmp.asImageBitmap(),
-                            contentDescription = "QR della posizione",
+                            contentDescription =
+                                stringResource(R.string.places_qr_content_description),
                             modifier = Modifier.size(260.dp)
                         )
                     } else {
                         CircularProgressIndicator(modifier = Modifier.size(48.dp))
                     }
                     Text(
-                        text = if (qrContent != null) {
-                            "Inquadralo per aprire la mappa (anche da iPhone)."
-                        } else {
-                            "Nessun fix GPS: il QR contiene il testo della misura."
-                        },
+                        text = stringResource(
+                            if (qrContent != null) R.string.places_qr_hint_map
+                            else R.string.places_qr_hint_text
+                        ),
                         style = MaterialTheme.typography.bodyMedium,
                         modifier = Modifier.padding(top = 12.dp)
                     )
@@ -195,11 +201,11 @@ fun PlaceShareBar(
                         QrShareHelper.shareQr(context, bmp)
                     }
                 }) {
-                    Text("Condividi QR")
+                    Text(stringResource(R.string.action_share_qr_title))
                 }
             },
             dismissButton = {
-                TextButton(onClick = { showQr = false }) { Text("Chiudi") }
+                TextButton(onClick = { showQr = false }) { Text(stringResource(R.string.action_close)) }
             }
         )
     }

@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
 import androidx.core.content.FileProvider
+import com.miraglio.R
 import java.io.File
 
 /** Condivide il QR come immagine (via FileProvider sulla cache). */
@@ -26,7 +27,12 @@ object QrShareHelper {
                 putExtra(Intent.EXTRA_STREAM, uri)
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             }
-            context.startActivity(Intent.createChooser(intent, "Condividi QR"))
+            context.startActivity(
+                Intent.createChooser(
+                    intent,
+                    context.getString(R.string.action_share_qr_title)
+                )
+            )
         }
     }
 }

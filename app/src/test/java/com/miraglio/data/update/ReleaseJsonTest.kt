@@ -1,6 +1,8 @@
 package com.miraglio.data.update
 
+import com.miraglio.R
 import com.miraglio.domain.update.AppVersion
+import com.miraglio.domain.update.UpdateFailure
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertThrows
@@ -94,9 +96,13 @@ class ReleaseJsonTest {
               ]
             }
         """.trimIndent()
-        assertThrows(IllegalStateException::class.java) {
+
+        // Il guasto e' tipizzato: porta l'id della stringa da mostrare, cosi'
+        // il messaggio nasce tradotto e non resta una riga italiana nel codice.
+        val guasto = assertThrows(UpdateFailure::class.java) {
             ReleaseJson.releaseFrom(senzaApk)
         }
+        assertEquals(R.string.update_release_no_apk, guasto.messageId)
     }
 
     @Test
@@ -104,8 +110,9 @@ class ReleaseJsonTest {
         val senzaVersione = rispostaVera.replaceFirst("\"tag_name\": \"v1.0.2\"", "\"tag_name\": \"release-finale\"")
         assertTrue("la sostituzione non e' avvenuta", senzaVersione.contains("release-finale"))
 
-        assertThrows(IllegalStateException::class.java) {
+        val guasto = assertThrows(UpdateFailure::class.java) {
             ReleaseJson.releaseFrom(senzaVersione)
         }
+        assertEquals(R.string.update_release_tag_unknown, guasto.messageId)
     }
 }

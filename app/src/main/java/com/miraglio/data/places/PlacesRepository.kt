@@ -17,7 +17,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
-import com.miraglio.domain.format.ItalianFormat
+import com.miraglio.i18n.AppLanguage
 import java.io.File
 import java.util.UUID
 import javax.inject.Inject
@@ -33,7 +33,8 @@ import javax.inject.Singleton
  */
 @Singleton
 class PlacesRepository @Inject constructor(
-    @ApplicationContext private val context: Context
+    @ApplicationContext private val context: Context,
+    private val language: AppLanguage
 ) {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -120,6 +121,24 @@ class PlacesRepository @Inject constructor(
         _places.value = updated
     }
 
+    /**
+     * Salva la nota libera del luogo.
+     *
+     * Qui la stringa vuota e' un valore e **si scrive**: cancellare la nota e'
+     * una modifica come le altre. Nella rinomina invece un etichetta vuota si
+     * ignorava, perche' l'etichetta ha un default (la data) e azzerarla avrebbe
+     * tolto il nome. La nota non ha default: azzerata resta azzerata.
+     */
+    suspend fun setNotes(id: String, notes: String) = withContext(Dispatchers.IO) {
+        if (_places.value.none { it.id == id }) return@withContext
+        val trimmed = notes.trim()
+        val updated = _places.value.map {
+            if (it.id == id) it.copy(notes = trimmed) else it
+        }
+        writeIndex(updated)
+        _places.value = updated
+    }
+
     /** Elimina il luogo con la sua foto. */
     suspend fun delete(id: String) = withContext(Dispatchers.IO) {
         val target = _places.value.firstOrNull { it.id == id }
@@ -130,10 +149,14 @@ class PlacesRepository @Inject constructor(
     }
 
     /**
-     * Etichetta predefinita: data/ora leggibile dello scatto, in formato
-     * italiano gg/mm/aaaa e ora di Roma, indipendente dal telefono.
+     * Etichetta predefinita: data/ora leggibile dello scatto, nella forma della
+     * lingua scelta e con l'ora di Roma, indipendente dal telefono.
+     *
+     * Il formattatore si chiede a ogni chiamata e non si tiene da parte: questo
+     * archivio vive quanto il processo, e un cambio di lingua (Impostazioni ->
+     * Lingua) non lo ricrea.
      */
-    fun defaultLabel(createdAtMs: Long): String = ItalianFormat.dateTime(createdAtMs)
+    fun defaultLabel(createdAtMs: Long): String = language.format().dateTime(createdAtMs)
 
     // ------------------------------------------------------------------
     // Serializzazione
@@ -159,6 +182,9 @@ class PlacesRepository @Inject constructor(
         .put("created", createdAtMs)
         .put("kind", kind.name)
         .put("label", label)
+        // Assente per le note vuote: l'indice resta compatto e i record
+        // scritti da versioni vecchie (senza la chiave) si leggono uguali.
+        .putOpt("notes", notes.takeIf { it.isNotEmpty() })
         .putOpt("photo", photoFile)
         .putOpt("shot", shotFix?.toJson())
         .putOpt("bearing", bearingDeg?.toDouble())
@@ -183,6 +209,7 @@ class PlacesRepository @Inject constructor(
             kind = runCatching { PlaceKind.valueOf(o.getString("kind")) }
                 .getOrDefault(PlaceKind.CAMERA),
             label = o.optString("label").ifEmpty { defaultLabel(created) },
+            notes = o.optString("notes"),
             photoFile = o.optString("photo").takeIf { it.isNotEmpty() },
             shotFix = o.optJSONObject("shot")?.let { fixFromJson(it) },
             bearingDeg = deg("bearing"),

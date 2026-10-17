@@ -14,6 +14,7 @@ import com.miraglio.data.places.PlacesRepository
 import com.miraglio.data.share.ShareImageComposer
 import com.miraglio.domain.location.GpsFix
 import com.miraglio.domain.share.ShareMessageComposer
+import com.miraglio.i18n.Texts
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
@@ -32,14 +33,25 @@ data class PlaceDetailState(
     val shareMessage: String? = null,
     val qrContent: String? = null,
     val shareImageUri: Uri? = null,
-    val missingPhoto: Boolean = false
+    val missingPhoto: Boolean = false,
+
+    /**
+     * Nota mentre si scrive: resta in memoria finche' non si salva, cosi'
+     * non si riscrive l'indice a ogni tasto e non si perde quello che stava
+     * per essere scritto cambiando schermata per sbaglio.
+     * [record.notes] e' invece quello che e' sul disco.
+     */
+    val notesDraft: String = "",
+    /** La nota appena salvata: il bottone resta in "Salvato" finche' non si tocca. */
+    val notesSaved: Boolean = false
 )
 
 @HiltViewModel
 class PlaceDetailViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
     @ApplicationContext private val appContext: Context,
-    private val repository: PlacesRepository
+    private val repository: PlacesRepository,
+    private val texts: Texts
 ) : ViewModel() {
 
     private val placeId: String = savedStateHandle.get<String>("id").orEmpty()
@@ -85,6 +97,7 @@ class PlaceDetailViewModel @Inject constructor(
             }
             _state.value = PlaceDetailState(
                 record = record,
+                notesDraft = record.notes,
                 thumbnail = thumb,
                 shareMessage = message,
                 // Con il pin il QR apre la mappa; senza fix si codifica il
@@ -104,6 +117,7 @@ class PlaceDetailViewModel @Inject constructor(
                 val horizontal = record.horizontalDistanceM
                 if (distance == null || horizontal == null) return null
                 ShareMessageComposer.cameraPlace(
+                    texts = texts,
                     fix = record.shotFix,
                     bearingDeg = record.bearingDeg ?: 0f,
                     distanceM = distance,
@@ -119,7 +133,7 @@ class PlaceDetailViewModel @Inject constructor(
                 // gpsPlace aggiunge l'errore (±) gia' calcolato sui fix:
                 // la precisione resta nel messaggio condiviso anche per le
                 // misure accettate con errore elevato.
-                ShareMessageComposer.gpsPlace(distance, record.startFix, end, record.gpsErrorM)
+                ShareMessageComposer.gpsPlace(texts, distance, record.startFix, end, record.gpsErrorM)
             }
         }
     }
@@ -135,6 +149,31 @@ class PlaceDetailViewModel @Inject constructor(
             repository.rename(placeId, newLabel)
             _state.value = _state.value.copy(
                 record = _state.value.record?.copy(label = newLabel.trim())
+            )
+        }
+    }
+
+    /**
+     * Modifica della nota: tocca solo lo stato locale. Il disco lo tocca
+     * [saveNotes], quando l'utente lo chiede.
+     */
+    fun onNotesChange(value: String) {
+        _state.value = _state.value.copy(notesDraft = value, notesSaved = false)
+    }
+
+    /** Salva la nota sul disco (spazio vuoti ai bordi non vanno salvati). */
+    fun saveNotes() {
+        val corrente = _state.value
+        val trimmed = corrente.notesDraft.trim()
+        // Note identiche (o solo diversa di spazi in piu'): non si riscrive
+        // l'indice e non si dice "salvato" per una scrittura che non c'e'.
+        if (trimmed == corrente.record?.notes) return
+        viewModelScope.launch {
+            repository.setNotes(placeId, trimmed)
+            _state.value = _state.value.copy(
+                record = _state.value.record?.copy(notes = trimmed),
+                notesDraft = trimmed,
+                notesSaved = true
             )
         }
     }

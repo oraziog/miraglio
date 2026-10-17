@@ -3,6 +3,7 @@ package com.miraglio.ui.places
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import com.miraglio.R
 
 /**
  * Intent di condivisione "universale": testo con link Google Maps (tappabile
@@ -13,18 +14,20 @@ object ShareIntents {
     /**
      * Condivide solo testo (misura + link, o l'invito a installare l'app).
      * Il titolo del chooser si puo' cambiare: e' l'unica cosa che distingue
-     * una condivisione da un'altra.
+     * una condivisione da un'altra. Senza titolo si usa quello generico
+     * tradotto (`Condividi luogo` / `Share place`).
      */
     fun shareText(
         context: Context,
         text: String,
-        chooserTitle: String = "Condividi luogo"
+        chooserTitle: String? = null
     ) {
         val intent = Intent(Intent.ACTION_SEND).apply {
             type = "text/plain"
             putExtra(Intent.EXTRA_TEXT, text)
         }
-        context.startActivity(Intent.createChooser(intent, chooserTitle))
+        val title = chooserTitle ?: context.getString(R.string.action_share_place_title)
+        context.startActivity(Intent.createChooser(intent, title))
     }
 
     /**
@@ -38,7 +41,12 @@ object ShareIntents {
             putExtra(Intent.EXTRA_TEXT, text)
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
-        context.startActivity(Intent.createChooser(intent, "Condividi luogo"))
+        context.startActivity(
+            Intent.createChooser(
+                intent,
+                context.getString(R.string.action_share_place_title)
+            )
+        )
     }
 
     /** Apre Google Maps (o qualunque navigatore) sul pin. */

@@ -1,7 +1,9 @@
 package com.miraglio.data.update
 
+import com.miraglio.R
 import com.miraglio.domain.update.AppVersion
 import com.miraglio.domain.update.ReleaseInfo
+import com.miraglio.domain.update.UpdateFailure
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -25,9 +27,9 @@ internal object ReleaseJson {
         val release = JSONObject(json)
         val tag = release.getString("tag_name")
         val version = AppVersion.parse(tag)
-            ?: error("Etichetta di release non riconosciuta: $tag")
+            ?: throw UpdateFailure(R.string.update_release_tag_unknown, listOf(tag))
         val apk = apkAsset(release.optJSONArray("assets"))
-            ?: error("La release $tag non ha nessun APK allegato")
+            ?: throw UpdateFailure(R.string.update_release_no_apk, listOf(tag))
         return ReleaseInfo(
             tagName = tag,
             version = version,
