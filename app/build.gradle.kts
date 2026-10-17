@@ -23,8 +23,8 @@ android {
         // la propria con l'etichetta della release piu' recente su GitHub e
         // propone l'aggiornamento solo se quella e' piu' alta. Etichetta e
         // versione vanno mantenute allineate (tag v1.0.2 = versionName 1.0.2).
-        versionCode = 6
-        versionName = "1.0.5"
+        versionCode = 7
+        versionName = "1.0.6"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 

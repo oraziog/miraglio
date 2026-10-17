@@ -55,6 +55,7 @@ class CalibrationScatterTest {
         val scatter = requireNotNull(calibrationScatter(puntiGiusti))
 
         assertEquals(emptyList<ScatterPoint>(), scatter.outliers)
+        assertEquals("punti tutti uguali: scarto massimo nullo", 0f, scatter.maxDeviation, 0.0001f)
         assertEquals("i punti vanno in ordine di distanza", 4, scatter.points.size)
         assertTrue(
             "la retta deve restare piatta su 700 px, non su un valore inventato",
@@ -76,6 +77,10 @@ class CalibrationScatterTest {
 
         assertEquals("un solo indiziato", 1, scatter.outliers.size)
         assertEquals(99L, scatter.outliers.first().id)
+        assertTrue(
+            "lo scarto massimo deve raccontare il punto storto",
+            scatter.maxDeviation > scatter.tolerance
+        )
         assertTrue("la retta non deve essere trascinata dall'outlier",
             kotlin.math.abs(scatter.expectedFocalAt(25f) - 700f) <= 700f * 0.05f
         )

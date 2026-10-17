@@ -233,6 +233,23 @@ Ci sono due cancellazioni, entrambe da confermare prima di eseguirle:
 Quello che hai già misurato non cambia: la calibrazione serve ai calcoli da qui
 in avanti, non riscrive i luoghi salvati.
 
+### Il grafico dei punti
+
+Sotto i valori c'è il grafico: **distanza** sull'asse orizzontale, **focale
+implicita** su quello verticale, con l'unità scritta sugli assi (metri o iarde
+secondo l'unità scelta, sempre px per la focale). I punti corretti stanno sulla
+retta di regressione; quelli misurati male sono cerchiati in **rosso**.
+
+Quando un punto è fuori linea l'app scrive **a quali distanze rifare la misura**:
+cancella quel punto e rimisura **quella distanza**, non tutta la calibrazione.
+Un punto sbagliato pesa molto sulla media, soprattutto se per quell'asse ci sono
+pochi punti (con tre misure di altezza, ognuna vale un terzo di fy).
+
+Sotto il grafico c'è anche lo **scarto massimo**: se nessun punto è rosso ma il
+numero è vicino al 10%, la calibrazione è ancora dentro la tolleranza ma rifare
+le misure più scostate la rende più stretta. Con uno scarto basso non c'è niente
+da rifare, anche se due punti sembrano lontani sulla scala del disegno.
+
 ### Zoom e calibrazione
 
 La calibrazione si fa a zoom di base (1x). Durante le misure lo **zoom viene

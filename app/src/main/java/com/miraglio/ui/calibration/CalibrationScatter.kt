@@ -30,6 +30,18 @@ data class CalibrationScatter(
 ) {
     val outliers: List<ScatterPoint> get() = points.filter { it.outlier }
 
+    /**
+     * Scostamento relativo massimo dalla retta: dice quanto e' "stretta" la
+     * calibrazione anche quando nessun punto supera la tolleranza. Con punti
+     * tutti vicini il numero e' basso; se si avvicina al 10% conviene rifare
+     * le misure piu' scostate, prima che diventino indiziati.
+     */
+    val maxDeviation: Float
+        get() = points.maxOfOrNull { p ->
+            val attesa = expectedFocalAt(p.distanceM)
+            if (attesa > 0f) abs(p.focalPx - attesa) / attesa else 0f
+        } ?: 0f
+
     fun expectedFocalAt(distanceM: Float): Float = slopePxPerMeter * distanceM + interceptPx
 }
 

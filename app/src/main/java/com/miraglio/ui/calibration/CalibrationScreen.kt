@@ -489,17 +489,25 @@ private fun CalibrationScatterChart(scatter: CalibrationScatter) {
         }
 
         val outliers = scatter.outliers
+        // Le distanze degli indiziati, non solo il numero: il consiglio e'
+        // "rifai la misura a quelle distanze", e senza dirle bisognerebbe
+        // cercarle una per una nella lista.
+        val outlierDistances = outliers
+            .map { format.distance(it.distanceM, 0) }
+            .distinct()
+            .joinToString(", ")
         Text(
             text = if (outliers.isEmpty()) {
                 stringResource(
                     R.string.calibration_chart_ok,
                     format0(scatterPoints.size.toFloat()),
-                    format0(scatter.expectedFocalAt(midDistance))
+                    format0(scatter.expectedFocalAt(midDistance)),
+                    format.number(scatter.maxDeviation * 100f, 0)
                 )
             } else {
                 stringResource(
                     R.string.calibration_chart_outliers,
-                    format0(outliers.size.toFloat())
+                    outlierDistances
                 )
             },
             style = MaterialTheme.typography.bodySmall,

@@ -85,6 +85,10 @@ misura + coordinate), condivisibili come pin Google Maps, QR code o foto georefe
 - **Gestione dei punti**: la card dice quale lente stai calibrando, elenca i punti
   salvati lente per lente e li cancella con conferma — solo quelli della lente in
   corso, o quelli di tutte le lenti
+- **Grafico dei punti** con unità sugli assi (m/yd e px): i punti fuori linea
+  sono in rosso e il messaggio dice a **quali distanze rifare la misura**;
+  lo scarto massimo mostra quanto è stretta la calibrazione anche quando
+  nessun punto è rosso
 - Le misure usano la focale calibrata **automaticamente**, zoom compreso
 - **Scambio fra due telefoni** ("Condividi o importa"): la calibrazione parte come
   **testo** (messaggio, copia-incolla) o come **QR** da inquadrare. Prima di
@@ -288,7 +292,7 @@ docs/img/                                         # banner, infografica e icona 
 
 ---
 
-## Stato corrente (v1.0.5, versionCode 6)
+## Stato corrente (v1.0.6, versionCode 7)
 
 | Funzione | Stato |
 |----------|-------|
@@ -362,21 +366,21 @@ a percorsi relativi: il corpo della release non è un file del repository, e un
 link relativo darebbe 404 proprio sulla pagina che deve installare l'app.
 
 1. Alza **`versionCode`** e **`versionName`** in [app/build.gradle.kts](app/build.gradle.kts)
-   (es. `versionCode = 6`, `versionName = "1.0.5"`).
+   (es. `versionCode = 7`, `versionName = "1.0.6"`).
 2. Committa e spingi il tag:
 
 ```bash
-git commit -am "Versione 1.0.5"
-git tag v1.0.5
-git push origin master v1.0.5
+git commit -am "Versione 1.0.6"
+git tag v1.0.6
+git push origin master v1.0.6
 ```
 
 3. GitHub Actions compila, firma e pubblica la release con l'APK e il suo
    **`.sha256`** allegati
    ([.github/workflows/release.yml](.github/workflows/release.yml)): si segue
    in *Actions* su GitHub. Il checksum è anche scritto nel corpo della release e
-   si verifica con `sha256sum -c miraglio-1.0.5.apk.sha256`.
-4. Al primo avvio dopo la pubblicazione l'app installata avvisa che c'è la 1.0.5.
+   si verifica con `sha256sum -c miraglio-1.0.6.apk.sha256`.
+4. Al primo avvio dopo la pubblicazione l'app installata avvisa che c'è la 1.0.6.
 
 ### Firma dell'APK
 
