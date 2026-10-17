@@ -230,7 +230,7 @@ L'app si apre sulla schermata di **misura**; dal menu (☰) si raggiungono le al
 | Build | Gradle (Kotlin DSL), libs.versions.toml, AGP 8.7.3, Kotlin 2.1.0 |
 | Min SDK | 26 (Android 8.0) — Target/Compile SDK 35 |
 | Aggiornamenti | GitHub Releases REST API (`HttpURLConnection` + `org.json`), FileProvider → installatore di sistema |
-| Release / CI | GitHub Actions (tag `v*.*.*` → APK firmato → release pubblicata) |
+| Release / CI | GitHub Actions (tag `v*.*.*` → APK firmato → release pubblicata con APK e `.sha256`) |
 | Lingua | Si sceglie **dentro l'app** (Impostazioni → Lingua): come il telefono, italiano, spagnolo o inglese. Il ripiego è l'inglese (`values/`), le traduzioni stanno in `values-it/` e `values-es/`; `xml/locales_config.xml` dichiara le stesse lingue ad Android 13+. Cambio a caldo, senza riavviare l'app |
 | Unità di misura | Si sceglie **dentro l'app** (Impostazioni → Unità di misura), **indipendente dalla lingua**: metriche (m, cm) o imperiali (yd, in, ft). Dentro l'app si continua a contare in metri (`UnitSystem.kt` + `DisplayFormat.kt`): la conversione esiste solo dove si scrive e dove si legge un numero |
 | Test | JUnit 4 (JVM): confronto versioni, lettura release, invito, regole di misura, formattazione, parità delle traduzioni |
@@ -288,7 +288,7 @@ docs/img/                                         # banner, infografica e icona 
 
 ---
 
-## Stato corrente (v1.0.4, versionCode 5)
+## Stato corrente (v1.0.5, versionCode 6)
 
 | Funzione | Stato |
 |----------|-------|
@@ -362,19 +362,21 @@ a percorsi relativi: il corpo della release non è un file del repository, e un
 link relativo darebbe 404 proprio sulla pagina che deve installare l'app.
 
 1. Alza **`versionCode`** e **`versionName`** in [app/build.gradle.kts](app/build.gradle.kts)
-   (es. `versionCode = 5`, `versionName = "1.0.4"`).
+   (es. `versionCode = 6`, `versionName = "1.0.5"`).
 2. Committa e spingi il tag:
 
 ```bash
-git commit -am "Versione 1.0.4"
-git tag v1.0.4
-git push origin master v1.0.4
+git commit -am "Versione 1.0.5"
+git tag v1.0.5
+git push origin master v1.0.5
 ```
 
-3. GitHub Actions compila, firma e pubblica la release con l'APK allegato
+3. GitHub Actions compila, firma e pubblica la release con l'APK e il suo
+   **`.sha256`** allegati
    ([.github/workflows/release.yml](.github/workflows/release.yml)): si segue
-   in *Actions* su GitHub.
-4. Al primo avvio dopo la pubblicazione l'app installata avvisa che c'è la 1.0.4.
+   in *Actions* su GitHub. Il checksum è anche scritto nel corpo della release e
+   si verifica con `sha256sum -c miraglio-1.0.5.apk.sha256`.
+4. Al primo avvio dopo la pubblicazione l'app installata avvisa che c'è la 1.0.5.
 
 ### Firma dell'APK
 

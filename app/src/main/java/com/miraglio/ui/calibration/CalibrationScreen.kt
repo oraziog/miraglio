@@ -42,7 +42,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.miraglio.R
@@ -367,6 +370,10 @@ private val ChartHeight = 132.dp
  * quelli misurati male sono **in rosso**, e la riga sotto quantifica il danno
  * — perche' un grafico che fa vedere il problema deve anche dire qu' e' e
  * cosa si fa (il cestino e' nella lista subito sotto).
+ *
+ * Gli assi hanno l'unita' scritta accanto (metri o iarde, sempre px per la
+ * focale): senza, due numeri su una scala non dicono cosa stanno misurando, e
+ * chi ha scelto le iarde leggerebbe metri.
  */ 
 @Composable
 private fun CalibrationScatterChart(scatter: CalibrationScatter) {
@@ -375,6 +382,13 @@ private fun CalibrationScatterChart(scatter: CalibrationScatter) {
     val pointColor = MaterialTheme.colorScheme.primary
     val outlierColor = MaterialTheme.colorScheme.error
     val axisColor = MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.35f)
+    val axisLabelColor = MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.7f)
+    val textMeasurer = rememberTextMeasurer()
+    val axisTextStyle = MaterialTheme.typography.labelSmall.copy(color = axisLabelColor)
+    // L'unita' dell'asse orizzontale segue quella scelta in Impostazioni.
+    val distanceAxisLabel =
+        stringResource(R.string.calibration_chart_axis_x, format.distanceUnit)
+    val focalAxisLabel = stringResource(R.string.calibration_chart_axis_y)
     val scatterPoints = scatter.points
     val midDistance =
         (scatterPoints.minOf { it.distanceM } + scatterPoints.maxOf { it.distanceM }) / 2f
@@ -410,14 +424,41 @@ private fun CalibrationScatterChart(scatter: CalibrationScatter) {
                 maxF += pad
             }
 
-            fun sx(distanceM: Float): Float = (distanceM - minD) / (maxD - minD) * size.width
+            // Le etichette occupano una fascia sopra e una sotto il grafico:
+            // i dati restano dentro l'area, senza finirci sopra.
+            val topPad = 16.dp.toPx()
+            val bottomPad = 16.dp.toPx()
+            val plotHeight = size.height - topPad - bottomPad
+            fun sx(distanceM: Float): Float =
+                (distanceM - minD) / (maxD - minD) * size.width
             fun sy(focalPx: Float): Float =
-                size.height - (focalPx - minF) / (maxF - minF) * size.height
+                size.height - bottomPad - (focalPx - minF) / (maxF - minF) * plotHeight
 
-            // Assi: non c'e' spazio per le etichette, e i numeri esistono gia'
-            // nella lista e nei valori sopra.
-            drawLine(axisColor, Offset(0f, size.height), Offset(size.width, size.height), strokeWidth = 2f)
-            drawLine(axisColor, Offset(0f, 0f), Offset(0f, size.height), strokeWidth = 2f)
+            drawLine(
+                axisColor,
+                Offset(0f, size.height - bottomPad),
+                Offset(size.width, size.height - bottomPad),
+                strokeWidth = 2f
+            )
+            drawLine(
+                axisColor,
+                Offset(0f, topPad),
+                Offset(0f, size.height - bottomPad),
+                strokeWidth = 2f
+            )
+
+            // Unita' sugli assi: distanza (m o yd) in basso a destra, focale
+            // (px) in alto a sinistra dove comincia l'asse verticale.
+            val xLabel = textMeasurer.measure(AnnotatedString(distanceAxisLabel), axisTextStyle)
+            drawText(
+                xLabel,
+                topLeft = Offset(
+                    size.width - xLabel.size.width.toFloat(),
+                    size.height - xLabel.size.height.toFloat()
+                )
+            )
+            val yLabel = textMeasurer.measure(AnnotatedString(focalAxisLabel), axisTextStyle)
+            drawText(yLabel, topLeft = Offset(2.dp.toPx(), 0f))
 
             // Retta di regressione: se pende, la focal cambia con la distanza
             // e qualcosa e' sistematico.

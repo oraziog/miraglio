@@ -181,6 +181,8 @@
     <string name="calibration_explanation">Senza punti la focale è teorica (FOV diagonale 67°). Aggiungi punti fotografando un bersaglio noto a distanza nota: d = dimensione × focale / pixel.</string>
     <!-- Grafico dei punti: la focale implicita contro la distanza -->
     <string name="calibration_chart_title">Punti e retta di regressione</string>
+    <string name="calibration_chart_axis_x">distanza (%1$s)</string>
+    <string name="calibration_chart_axis_y">focale (px)</string>
     <string name="calibration_chart_ok">%1$s punti sulla linea, focale attesa ≈ %2$s px</string>
     <string name="calibration_chart_outliers">%1$s punti stanno lontano dalla linea (rosso): eliminali, distorcono la media.</string>
     <string name="calibration_axis_horizontal">orizz</string>

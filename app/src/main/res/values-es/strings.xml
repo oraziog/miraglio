@@ -182,6 +182,8 @@
     <string name="calibration_explanation">Sin puntos la focal es teórica (FOV diagonal 67°). Añade puntos fotografiando una diana conocida a una distancia conocida: d = tamaño × focal / píxel.</string>
     <!-- Grafico dei punti: la focale implicita contro la distanza -->
     <string name="calibration_chart_title">Puntos y recta de regresión</string>
+    <string name="calibration_chart_axis_x">distancia (%1$s)</string>
+    <string name="calibration_chart_axis_y">focal (px)</string>
     <string name="calibration_chart_ok">%1$s puntos en la línea, focal esperada ≈ %2$s px</string>
     <string name="calibration_chart_outliers">%1$s puntos están lejos de la línea (rojos): bórralos, distorsionan la media.</string>
     <string name="calibration_axis_horizontal">horiz</string>

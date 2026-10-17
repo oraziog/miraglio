@@ -193,6 +193,8 @@
     <string name="calibration_explanation">Without points the focal length is theoretical (67° diagonal FOV). Add points by photographing a known target at a known distance: d = size × focal / pixel.</string>
     <!-- Grafico dei punti: la focale implicita contro la distanza -->
     <string name="calibration_chart_title">Points and regression line</string>
+    <string name="calibration_chart_axis_x">distance (%1$s)</string>
+    <string name="calibration_chart_axis_y">focal length (px)</string>
     <string name="calibration_chart_ok">%1$s points on the line, expected focal ≈ %2$s px</string>
     <string name="calibration_chart_outliers">%1$s points far from the line (red): delete them, they skew the average.</string>
     <string name="calibration_axis_horizontal">horiz</string>

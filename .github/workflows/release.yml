@@ -95,12 +95,22 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.ref_name }}
         run: |
-          cp app/build/outputs/apk/release/app-release.apk "miraglio-${TAG#v}.apk"
+          set -euo pipefail
+          APK="miraglio-${TAG#v}.apk"
+          cp app/build/outputs/apk/release/app-release.apk "$APK"
+          # Il checksum viaggia con l'APK: chi scarica puo' verificare che il
+          # file sia arrivato integro, anche senza controllare la firma. Il
+          # formato e' quello di sha256sum, cosi' `sha256sum -c` funziona.
+          sha256sum "$APK" > "$APK.sha256"
+          HASH="$(cut -d' ' -f1 "$APK.sha256")"
           # Il corpo della release e' la guida di installazione (INSTALLAZIONE.md),
           # poi GitHub ci appende il changelog generato: chi apre il link della
           # release deve trovare come installarla, non solo l'elenco dei commit.
           # Unica fonte delle istruzioni: si aggiorna solo INSTALLAZIONE.md.
-          gh release create "$TAG" "miraglio-${TAG#v}.apk" \
+          NOTES="$RUNNER_TEMP/note-release.md"
+          cat INSTALLAZIONE.md > "$NOTES"
+          printf '\n\n**SHA-256 di `%s`**\n\n```text\n%s\n```\n' "$APK" "$HASH" >> "$NOTES"
+          gh release create "$TAG" "$APK" "$APK.sha256" \
             --title "Miraglio ${TAG#v}" \
-            --notes-file INSTALLAZIONE.md \
+            --notes-file "$NOTES" \
             --generate-notes

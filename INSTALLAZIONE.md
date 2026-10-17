@@ -23,6 +23,10 @@ In cima vedi *Miraglio* seguito dal numero di versione. Scorri fino alla voce
 `miraglio-<versione>.apk`, è scritto in piccolo sotto al nome: sono circa 120 MB,
 conviene scaricarlo in wifi).
 
+Accanto c'è anche `miraglio-<versione>.apk.sha256`: è l'impronta del file, utile
+a chi lo scarica da computer per controllare che sia arrivato integro
+(`sha256sum -c`). Per installare dal telefono non serve.
+
 ## 2. Apri il file scaricato
 
 Quando il download è finito, apri il file: dalla **notifica** di Chrome, oppure da
