@@ -196,7 +196,8 @@
     <string name="calibration_chart_axis_x">distance (%1$s)</string>
     <string name="calibration_chart_axis_y">focal length (px)</string>
     <string name="calibration_chart_ok">%1$s points on the line, expected focal ≈ %2$s px · max deviation %3$s%%</string>
-    <string name="calibration_chart_outliers">Off the line: %1$s. Delete them and measure again at those distances, or the error stays in the calibration.</string>
+    <string name="calibration_chart_outliers">Off the line: %1$s. Measure again with the buttons below, then delete the old points, or the error stays in the calibration.</string>
+    <string name="calibration_chart_redo">Redo %1$s</string>
     <string name="calibration_axis_horizontal">horiz</string>
     <string name="calibration_axis_vertical">vert</string>
     <string name="calibration_delete_point">Delete point</string>

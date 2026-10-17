@@ -38,7 +38,9 @@ misura + coordinate), condivisibili come pin Google Maps, QR code o foto georefe
   (`in/20yd`, come sono tarati i mirini): scala sul bordo sinistro con lo zero al
   centro, quanto vale una tacca e quanto copre il bersaglio (dimensione nota ×
   distanza stimata). Il passo non è fisso — a 1x 1 MOA è 0,35 px — quindi si
-  allarga finché le tacche si vedono, e il valore è scritto accanto
+  allarga finché le tacche si vedono, e il valore è scritto accanto. Si vedono
+  **mentre si inquadra**: sul fermo immagine la foto resta pulita, perché lì la
+  misura la fanno le due linee
 - **In orizzontale i pannelli passano accanto all'immagine** invece che sotto:
   immagine a sinistra, risultato/linee e pulsanti a destra
 
@@ -85,10 +87,13 @@ misura + coordinate), condivisibili come pin Google Maps, QR code o foto georefe
 - **Gestione dei punti**: la card dice quale lente stai calibrando, elenca i punti
   salvati lente per lente e li cancella con conferma — solo quelli della lente in
   corso, o quelli di tutte le lenti
-- **Grafico dei punti** con unità sugli assi (m/yd e px): i punti fuori linea
-  sono in rosso e il messaggio dice a **quali distanze rifare la misura**;
-  lo scarto massimo mostra quanto è stretta la calibrazione anche quando
-  nessun punto è rosso
+- **Grafico dei punti** con unità sugli assi (m/yd e px), numeri delle
+distanze sulle tacche dell'asse orizzontale e un trattino da ogni punto
+all'asse per leggerne la distanza: i punti fuori linea
+  sono in rosso, il messaggio dice a **quali distanze rifare la misura** e un
+  pulsante **"Rifai …"** apre la calibrazione con distanza, dimensione e asse
+  già compilati; lo scarto massimo mostra quanto è stretta la calibrazione
+  anche quando nessun punto è rosso
 - Le misure usano la focale calibrata **automaticamente**, zoom compreso
 - **Scambio fra due telefoni** ("Condividi o importa"): la calibrazione parte come
   **testo** (messaggio, copia-incolla) o come **QR** da inquadrare. Prima di
@@ -237,7 +242,7 @@ L'app si apre sulla schermata di **misura**; dal menu (☰) si raggiungono le al
 | Release / CI | GitHub Actions (tag `v*.*.*` → APK firmato → release pubblicata con APK e `.sha256`) |
 | Lingua | Si sceglie **dentro l'app** (Impostazioni → Lingua): come il telefono, italiano, spagnolo o inglese. Il ripiego è l'inglese (`values/`), le traduzioni stanno in `values-it/` e `values-es/`; `xml/locales_config.xml` dichiara le stesse lingue ad Android 13+. Cambio a caldo, senza riavviare l'app |
 | Unità di misura | Si sceglie **dentro l'app** (Impostazioni → Unità di misura), **indipendente dalla lingua**: metriche (m, cm) o imperiali (yd, in, ft). Dentro l'app si continua a contare in metri (`UnitSystem.kt` + `DisplayFormat.kt`): la conversione esiste solo dove si scrive e dove si legge un numero |
-| Test | JUnit 4 (JVM): confronto versioni, lettura release, invito, regole di misura, formattazione, parità delle traduzioni |
+| Test | JUnit 4 (JVM): confronto versioni, lettura release, invito, regole di misura, formattazione, parità delle traduzioni. In più **screenshot test** (Robolectric disegna il Compose vero sul JVM, Roborazzi confronta il PNG): il grafico della calibrazione, il pannello della calibrazione con la tastiera aperta e i pannelli di misura, luoghi e impostazioni. Nessun emulatore |
 
 ---
 
@@ -286,8 +291,10 @@ app/src/main/res/values-it/                       # traduzione italiana
 app/src/main/res/values-es/                       # traduzione spagnola
 app/src/main/res/xml/locales_config.xml           # lingue dichiarate al sistema e al selettore in-app
 app/src/test/java/com/miraglio/                   # test: aggiornamento, invito, regole di misura, lingua e formattazione
+app/src/test/screenshots/                         # PNG attesi degli screenshot test (versionati)
 docs/img/                                         # banner, infografica e icona usate nei documenti
 .github/workflows/release.yml                    # tag -> APK firmato -> release
+.github/workflows/screenshots.yml                # push/PR -> confronto di tutti gli screenshot
 ```
 
 ---
@@ -309,11 +316,11 @@ docs/img/                                         # banner, infografica e icona 
 | Unità di misura (metriche / imperiali) | ✅ Fatto — scelta in Impostazioni, indipendente dalla lingua: da provare sul telefono |
 | Blocco rotazione (barra in alto + Impostazioni, default: verticale) | ✅ Fatto — da provare sul telefono |
 | Pannelli accanto all'immagine in orizzontale (mira e misura) | ✅ Fatto — da provare sul telefono |
-| Tacche sul mirino in MOA e pollici a 20 iarde | ✅ Fatto — da provare sul telefono |
+| Tacche sul mirino in MOA e pollici a 20 iarde (in mira; tolte dal fermo immagine) | ✅ Fatto — da provare sul telefono |
 | Scambio calibrazione fra due telefoni (testo o QR) | ✅ Fatto — da provare su due telefoni dello stesso modello |
 | Verifica della focale importata (bersaglio noto, scarto oltre il 15%) | ✅ Fatto — da provare sul telefono |
 | Conferma aptica dei salvataggi | ✅ Fatto — da provare sul telefono |
-| Test automatici | ✅ Coprono aggiornamento, invito installazione, regole di misura, formattazione e parità di ogni traduzione col ripiego |
+| Test automatici | ✅ Coprono aggiornamento, invito installazione, regole di misura, formattazione e parità di ogni traduzione col ripiego. In più gli **screenshot test** (Roborazzi): grafico e pannello della calibrazione, pannello della misura, cronologia dei luoghi, card delle impostazioni — ogni disegno è confrontato pixel per pixel con il PNG in `app/src/test/screenshots/`, anche in CI |
 
 Note oneste:
 - La precisione senza calibrazione focale può essere peggiore del 30%: la guida
@@ -322,6 +329,12 @@ Note oneste:
   mandare a un altro telefono (testo o QR), ma su un modello diverso sono numeri
   del telefono sbagliato — per questo l'app dice da dove arrivano **prima** di
   importarli.
+- Le calibrazioni fatte con le versioni precedenti restano valide: al primo
+  avvio i punti vengono portati da soli alla risoluzione di analisi attuale
+  (1280), anche se erano stati presi quando l'app analizzava a 640. Non serve
+  rifare la calibrazione; i punti che erano stati mescolati fra le due
+  risoluzioni da una versione precedente vengono riscalati e la focale
+  ricalcolata da quelli.
 - La distanza è soggetta al limite di 80 m del modello pinhole implementato.
 - Il riconoscimento dei **testi** dei bersagli (ML Kit OCR) **non è usato**: il
   codice e la dipendenza restano nel progetto, ma nessuna schermata lo chiama.
@@ -336,6 +349,8 @@ Note oneste:
 ./gradlew assembleDebug     # APK di debug
 ./gradlew assembleRelease   # APK di release, firmato (quello degli aggiornamenti)
 ./gradlew check             # test + lint (lint con warningsAsErrors)
+./gradlew verifyRoborazziDebug   # test + confronto degli screenshot con i PNG attesi
+./gradlew recordRoborazziDebug   # riscrive i PNG attesi (solo dopo una modifica voluta)
 ```
 
 Output: `app/build/outputs/apk/debug/app-debug.apk` e
@@ -347,6 +362,35 @@ release esce **`app-release-unsigned.apk`**, che non si installa: vedi
 - JDK 17+
 - Android SDK 35
 - `local.properties` con `sdk.dir` (generato da Android Studio)
+
+### Screenshot test
+
+Quattro classi di test d'immagine disegnano il Compose **vero** (stringhe e tema
+dell'app) sul JVM con Robolectric, e Roborazzi cattura il risultato. I PNG
+attesi stanno in `app/src/test/screenshots/` e sono **versionati**: sono
+l'atteso, non un output di build.
+
+- `CalibrationChartScreenshotTest` — il grafico dei punti, in metri e in iarde.
+- `CalibrationPanelScreenshotTest` — il pannello della calibrazione con la
+  tastiera aperta, in verticale e in orizzontale: la striscia nera in fondo al
+  PNG è l'ingombro della tastiera, e quello che ci finisce sotto non lo vedrebbe
+  l'utente.
+- `MainScreensScreenshotTest` — il pannello del fermo immagine della misura
+  (distanza e altezza), la cronologia dei luoghi, le card delle impostazioni.
+
+Cosa **non** coprono: la schermata intera. Misura e Luoghi aprono fotocamera e
+database, e i loro ViewModel li costruisce Hilt: sul JVM si disegnano i pannelli,
+non l'immagine della fotocamera sopra. Quel pezzo resta da provare sul telefono.
+
+- `verifyRoborazziDebug` confronta il disegno attuale con i PNG e fallisce se
+  qualcosa è cambiato (posizione, testo, colore, ordine di disegno).
+- `recordRoborazziDebug` li riscrive: va fatto **solo** quando il cambio è
+  voluto, e il PNG nuovo va guardato e committato insieme al codice.
+
+In CI lo fa `.github/workflows/screenshots.yml` a ogni push e pull request: se
+il confronto fallisce, il job diventa rosso e pubblica come artefatti il PNG
+appena disegnato, il diff e il report HTML, così si vede *cosa* è cambiato e non
+solo *che* è cambiato.
 
 ---
 

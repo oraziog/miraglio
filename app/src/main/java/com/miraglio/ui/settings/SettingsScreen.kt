@@ -492,7 +492,7 @@ private fun ChoiceCard(
  * riconoscibili: chi cerca la sua lingua la trova comunque.
  */
 @Composable
-private fun LanguageCard(
+internal fun LanguageCard(
     selected: AppLanguageChoice,
     onSelect: (AppLanguageChoice) -> Unit
 ) {
@@ -513,7 +513,7 @@ private fun LanguageCard(
  * cosa cambia, cosi' non serve provarlo per capirlo.
  */
 @Composable
-private fun MeasurementUnitsCard(
+internal fun MeasurementUnitsCard(
     selected: UnitSystem,
     onSelect: (UnitSystem) -> Unit
 ) {
@@ -552,7 +552,7 @@ private fun unitLabel(unit: UnitSystem): String = when (unit) {
  * Riconoscimento dei bersagli: card con il colore dedicato del tema.
  */
 @Composable
-private fun RecognitionCard(
+internal fun RecognitionCard(
     enabled: Boolean,
     onToggle: (Boolean) -> Unit
 ) {

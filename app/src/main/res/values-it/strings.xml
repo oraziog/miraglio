@@ -184,7 +184,8 @@
     <string name="calibration_chart_axis_x">distanza (%1$s)</string>
     <string name="calibration_chart_axis_y">focale (px)</string>
     <string name="calibration_chart_ok">%1$s punti sulla linea, focale attesa ≈ %2$s px · scarto massimo %3$s%%</string>
-    <string name="calibration_chart_outliers">Fuori linea: %1$s. Cancellali e rifai la misura a quelle distanze, altrimenti l\'errore resta nella calibrazione.</string>
+    <string name="calibration_chart_outliers">Fuori linea: %1$s. Rifai la misura con i pulsanti qui sotto, poi cancella i punti vecchi, altrimenti l\'errore resta nella calibrazione.</string>
+    <string name="calibration_chart_redo">Rifai %1$s</string>
     <string name="calibration_axis_horizontal">orizz</string>
     <string name="calibration_axis_vertical">vert</string>
     <string name="calibration_delete_point">Elimina punto</string>

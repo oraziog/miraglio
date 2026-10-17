@@ -4,6 +4,8 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -40,6 +42,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
@@ -54,16 +57,20 @@ import com.miraglio.domain.focal.LensSummary
 import com.miraglio.ui.i18n.LocalDisplayFormat
 
 /** Cosa sta per essere cancellato: la lente in calibrazione, o tutte. */ 
-private enum class ClearScope { LENS, ALL }
-
-/** Padding stretto dei bottoni di cancellazione: sono due, e la card e' densa. */ 
+private enum class ClearScope { LENS, ALL }/** Padding stretto dei bottoni di cancellazione: sono due, e la card e' densa. */
 private val ClearButtonPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
+
+/** I pulsanti "Rifai …" stanno uno accanto all'altro sotto il grafico. */
+private val RedoButtonPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CalibrationScreen(
     onNavigateBack: () -> Unit,
     onNavigateToFocalCapture: () -> Unit = {},
+    // Distanza, dimensione e asse di una misura da rifare: la calibrazione si
+    // apre con quei valori gia' scritti.
+    onRedoDistance: (distanceM: Float, sizeM: Float, axis: String) -> Unit = { _, _, _ -> },
     onNavigateToTransfer: () -> Unit = {},
     viewModel: CalibrationViewModel = hiltViewModel()
 ) {
@@ -117,6 +124,7 @@ fun CalibrationScreen(
                 },
                 lensRows = lensRows,
                 onAddPoint = onNavigateToFocalCapture,
+                onRedoDistance = onRedoDistance,
                 onDeletePoint = viewModel::deleteFocalPoint,
                 onClearLens = { clearScope.value = ClearScope.LENS },
                 onClearAllLenses = { clearScope.value = ClearScope.ALL }
@@ -187,6 +195,7 @@ private fun FocalCalibrationCard(
     activeLensLabel: String?,
     lensRows: List<LensSummary>,
     onAddPoint: () -> Unit,
+    onRedoDistance: (distanceM: Float, sizeM: Float, axis: String) -> Unit,
     onDeletePoint: (Long) -> Unit,
     onClearLens: () -> Unit,
     onClearAllLenses: () -> Unit
@@ -241,7 +250,12 @@ private fun FocalCalibrationCard(
             // visiva alla stessa domanda che quei due numeri fanno a testo.
             val scatter = remember(points) { calibrationScatter(points) }
             if (scatter != null && scatter.points.size >= 2) {
-                CalibrationScatterChart(scatter)
+                CalibrationScatterChart(
+                    scatter = scatter,
+                    onRedoDistance = { punto ->
+                        onRedoDistance(punto.distanceM, punto.knownSizeM, punto.axis)
+                    }
+                )
             }
             Text(
                 text = stringResource(R.string.calibration_explanation),
@@ -361,7 +375,7 @@ private fun FocalCalibrationCard(
 
 /** Altezza del grafico: abbastanza per vedere la dispersione, non abbastanza
  *  da rubare lo schermo alla lista dei punti, che resta la cosa operativa. */ 
-private val ChartHeight = 132.dp
+private val ChartHeight = 150.dp
 
 /** Grafico dei punti: distanza sull'asse orizzontale, focale implicita su quello
  *  verticale, retta di regressione in mezzo.
@@ -375,8 +389,12 @@ private val ChartHeight = 132.dp
  * focale): senza, due numeri su una scala non dicono cosa stanno misurando, e
  * chi ha scelto le iarde leggerebbe metri.
  */ 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun CalibrationScatterChart(scatter: CalibrationScatter) {
+internal fun CalibrationScatterChart(
+    scatter: CalibrationScatter,
+    onRedoDistance: (ScatterPoint) -> Unit
+) {
     val format = LocalDisplayFormat.current
     val format0 = { v: Float -> format.number(v, 0) }
     val pointColor = MaterialTheme.colorScheme.primary
@@ -399,6 +417,18 @@ private fun CalibrationScatterChart(scatter: CalibrationScatter) {
             style = MaterialTheme.typography.labelLarge,
             fontWeight = FontWeight.Bold
         )
+
+        // Unita' degli assi sopra il grafico e non dentro: in alto servono due
+        // testi lunghi ("focale (px)" e "distanza (m)") e il grafico ora ha
+        // anche i numeri sulla colonna di sinistra, che occuperebbero lo stesso
+        // angolo. Sopra, allineati agli estremi, non si sovrappongono a niente.
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Text(focalAxisLabel, style = axisTextStyle)
+            Text(distanceAxisLabel, style = axisTextStyle)
+        }
 
         Canvas(
             modifier = Modifier
@@ -424,41 +454,126 @@ private fun CalibrationScatterChart(scatter: CalibrationScatter) {
                 maxF += pad
             }
 
-            // Le etichette occupano una fascia sopra e una sotto il grafico:
-            // i dati restano dentro l'area, senza finirci sopra.
-            val topPad = 16.dp.toPx()
-            val bottomPad = 16.dp.toPx()
+            // Le etichette occupano una fascia sotto il grafico: i dati
+            // restano dentro l'area, senza finirci sopra.
+            val topPad = 6.dp.toPx()
+            val bottomPad = 26.dp.toPx()
+
+            // Etichette della focale, misurate **prima** di disegnare: la
+            // colonna di sinistra si allarga quanto la piu' larga ("1400" sta
+            // piu' largo di "700"), cosi' i numeri non finiscono sopra i punti
+            // e i punti non finiscono sotto i numeri. Il tetto al 35% della
+            // larghezza impedisce che un valore assurdo (una focale a sei
+            // cifre) lasci il grafico senza area per i dati.
+            val yTicks = axisTicks(minF, maxF)
+            val yStep = if (yTicks.size >= 2) yTicks[1] - yTicks[0] else 1f
+            val yDigits = tickDecimals(yStep)
+            val yLabels = yTicks.map { focale ->
+                textMeasurer.measure(
+                    AnnotatedString(format.number(focale, yDigits)),
+                    axisTextStyle
+                )
+            }
+            val widestYLabel = (yLabels.maxOfOrNull { it.size.width } ?: 0).toFloat()
+            val leftPad = (widestYLabel + 6.dp.toPx())
+                .coerceAtMost(size.width * 0.35f)
+            val plotWidth = size.width - leftPad
             val plotHeight = size.height - topPad - bottomPad
+            // Margine interno: un punto al valore massimo cadrebbe esattamente
+            // sul bordo e il cerchio dell'indiziato (raggio 10 dp) verrebbe
+            // tagliato dal ritaglio del Canvas. La scala resta quella dei dati,
+            // si sposta solo di qualche pixel verso l'interno.
+            val xInset = 8.dp.toPx()
+            val yInset = 12.dp.toPx()
             fun sx(distanceM: Float): Float =
-                (distanceM - minD) / (maxD - minD) * size.width
+                leftPad + xInset +
+                    (distanceM - minD) / (maxD - minD) * (plotWidth - 2 * xInset).coerceAtLeast(1f)
             fun sy(focalPx: Float): Float =
-                size.height - bottomPad - (focalPx - minF) / (maxF - minF) * plotHeight
+                size.height - bottomPad - yInset -
+                    (focalPx - minF) / (maxF - minF) * (plotHeight - 2 * yInset).coerceAtLeast(1f)
 
             drawLine(
                 axisColor,
-                Offset(0f, size.height - bottomPad),
+                Offset(leftPad, size.height - bottomPad),
                 Offset(size.width, size.height - bottomPad),
                 strokeWidth = 2f
             )
             drawLine(
                 axisColor,
-                Offset(0f, topPad),
-                Offset(0f, size.height - bottomPad),
+                Offset(leftPad, topPad),
+                Offset(leftPad, size.height - bottomPad),
                 strokeWidth = 2f
             )
 
-            // Unita' sugli assi: distanza (m o yd) in basso a destra, focale
-            // (px) in alto a sinistra dove comincia l'asse verticale.
-            val xLabel = textMeasurer.measure(AnnotatedString(distanceAxisLabel), axisTextStyle)
-            drawText(
-                xLabel,
-                topLeft = Offset(
-                    size.width - xLabel.size.width.toFloat(),
-                    size.height - xLabel.size.height.toFloat()
+            // Tacche della focale: senza numeri l'asse verticale era una scala
+            // muta, e la focale di un punto si poteva solo dedurre dalla riga
+            // "focale attesa" sotto il grafico. La linea orizzontale tenue
+            // collega il numero ai punti che stanno a quella focale.
+            yTicks.forEachIndexed { indice, focale ->
+                val y = sy(focale)
+                drawLine(
+                    color = axisColor.copy(alpha = 0.18f),
+                    start = Offset(leftPad, y),
+                    end = Offset(size.width, y),
+                    strokeWidth = 1f
                 )
-            )
-            val yLabel = textMeasurer.measure(AnnotatedString(focalAxisLabel), axisTextStyle)
-            drawText(yLabel, topLeft = Offset(2.dp.toPx(), 0f))
+                drawLine(
+                    color = axisColor,
+                    start = Offset(leftPad - 3.dp.toPx(), y),
+                    end = Offset(leftPad, y),
+                    strokeWidth = 2f
+                )
+                val label = yLabels[indice]
+                // Etichetta centrata sulla tacca ma dentro l'area del
+                // grafico: la prima e l'ultima, centrate, uscirebbero sopra e
+                // sotto (sopra c'e' l'unita', sotto l'asse delle distanze).
+                val top = (y - label.size.height / 2f)
+                    .coerceIn(topPad, size.height - bottomPad - label.size.height)
+                drawText(
+                    label,
+                    topLeft = Offset(leftPad - 4.dp.toPx() - label.size.width, top)
+                )
+            }
+
+            // Tacche della distanza: senza numeri l'asse era una scala muta, e
+            // l'unico modo di sapere a che distanza sta un punto era cercarlo
+            // nella lista sotto. Le tacche sono "tonda" (5, 10, 15) e
+            // nell'unita' scelta: in iarde il valore e' convertito, non
+            // etichettato "m".
+            val ticks = axisTicks(minD, maxD)
+            val tickStep = if (ticks.size >= 2) ticks[1] - ticks[0] else 1f
+            val tickDigits = tickDecimals(tickStep)
+            ticks.forEach { distanza ->
+                val x = sx(distanza)
+                // Linea di riferimento appena visibile: lega la tacca ai
+                // punti che stanno a quella distanza.
+                drawLine(
+                    color = axisColor.copy(alpha = 0.18f),
+                    start = Offset(x, topPad),
+                    end = Offset(x, size.height - bottomPad),
+                    strokeWidth = 1f
+                )
+                drawLine(
+                    color = axisColor,
+                    start = Offset(x, size.height - bottomPad),
+                    end = Offset(x, size.height - bottomPad + 3.dp.toPx()),
+                    strokeWidth = 2f
+                )
+                val label = textMeasurer.measure(
+                    AnnotatedString(
+                        format.number(format.distanceValue(distanza), tickDigits)
+                    ),
+                    axisTextStyle
+                )
+                // La prima e l'ultima etichetta stanno agli estremi: senza il
+                // limite uscirebbero dal grafico e verrebbero tagliate.
+                val left = (x - label.size.width / 2f)
+                    .coerceIn(0f, size.width - label.size.width)
+                drawText(
+                    label,
+                    topLeft = Offset(left, size.height - bottomPad + 4.dp.toPx())
+                )
+            }
 
             // Retta di regressione: se pende, la focal cambia con la distanza
             // e qualcosa e' sistematico.
@@ -474,6 +589,16 @@ private fun CalibrationScatterChart(scatter: CalibrationScatter) {
             points.forEach { p ->
                 val center = Offset(sx(p.distanceM), sy(p.focalPx))
                 val radius = (if (p.outlier) 6.dp else 5.dp).toPx()
+                // Trattino dal punto all'asse: e' il modo di leggere "a che
+                // distanza" un punto senza stampare un'etichetta accanto a
+                // ogni pallino (due misure vicine si sovrapporrebbero).
+                drawLine(
+                    color = axisColor.copy(alpha = 0.5f),
+                    start = center,
+                    end = Offset(center.x, size.height - bottomPad),
+                    strokeWidth = 1f,
+                    pathEffect = PathEffect.dashPathEffect(floatArrayOf(6f, 6f))
+                )
                 drawCircle(color = pointColor, radius = radius, center = center)
                 if (p.outlier) {
                     // L'indiziato ha anche il cerchio: il rosso da solo si
@@ -517,6 +642,37 @@ private fun CalibrationScatterChart(scatter: CalibrationScatter) {
                 outlierColor
             }
         )
+
+        // "Rifai la misura" era un consiglio: qui diventa un pulsante, e la
+        // calibrazione si apre con distanza, dimensione e asse del punto
+        // sbagliato gia' compilati. Un pulsante per distanza, perche' le
+        // misure da rifare possono essere piu' d'una e vanno rifatte una alla
+        // volta, ognuna con la propria dimensione del bersaglio.
+        val daRifare = outliers
+            .distinctBy { it.distanceM }
+            .sortedBy { it.distanceM }
+        if (daRifare.isNotEmpty()) {
+            // FlowRow e non Row: con tre o quattro distanze da rifare i
+            // pulsanti non stanno su una riga sola di un telefono stretto.
+            FlowRow(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                daRifare.forEach { punto ->
+                    TextButton(
+                        onClick = { onRedoDistance(punto) },
+                        contentPadding = RedoButtonPadding
+                    ) {
+                        Text(
+                            stringResource(
+                                R.string.calibration_chart_redo,
+                                format.distance(punto.distanceM, 0)
+                            )
+                        )
+                    }
+                }
+            }
+        }
     }
 }
 

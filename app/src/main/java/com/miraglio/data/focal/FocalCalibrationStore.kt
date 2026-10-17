@@ -72,6 +72,24 @@ internal fun normalizeToFrame(
 }
 
 /**
+ * I punti di una lente riportati alla stessa risoluzione, o `null` se non
+ * c'e' niente da riparare.
+ *
+ * Serve alle calibrazioni salvate da una versione che mescolava punti di frame
+ * diversi (vedi [normalizeToFrame]): la' la media della focale e' stata fatta
+ * su pixel non confrontabili — con tre punti a 640 e uno a 1280 esce circa il
+ * 25% troppo alta — e il grafico mostra un punto "strano" che in realta' e'
+ * solo misurato a meta' risoluzione. La riparazione si fa leggendo, senza
+ * chiedere niente all'utente, perche' i punti portano gia' il proprio frame:
+ * l'informazione per rimetterli d'accordo c'e' tutta.
+ */
+internal fun repairedFrames(points: List<FocalPoint>): List<FocalPoint>? {
+    val frame = points.maxOfOrNull { it.frameLongSide } ?: return null
+    if (points.all { it.frameLongSide == frame }) return null
+    return normalizeToFrame(points, frame)
+}
+
+/**
  * Focale camera persistente, per-lente. La calibrazione è salvata per ogni
  * obiettivo (id camera), più una "lente principale" (1x). Quando la lente
  * attiva non è calibrata si ripiega sulla focale della lente 1x.
@@ -171,6 +189,15 @@ class FocalCalibrationStore @Inject constructor(
      * punti, non l'elenco degli obiettivi del telefono.
      */
     val pointCountsByLens: StateFlow<Map<String, Int>> = _pointCounts.asStateFlow()
+
+    init {
+        // Calibrazioni gia' sul telefono da una versione che mescolava frame
+        // diversi: si rimettono d'accordo all'avvio, una volta sola. Chi ha
+        // calibrato tutto a 640 non e' toccato (i frame coincidono) e continua
+        // a usare la sua focale: a portarla al frame corrente ci pensa
+        // [focalForFrame].
+        if (repairStoredFrames()) publish()
+    }
 
     /**
      * Imposta la lente principale (1x) con la sua focale nominale e migra la
@@ -489,6 +516,38 @@ class FocalCalibrationStore @Inject constructor(
         val scale = resolutionScale(frameLongSide)
         if (scale == 1f) return _points.value
         return _points.value.map { it.copy(pixels = it.pixels * scale) }
+    }
+
+    /**
+     * Riscrive i punti delle lenti salvate da una versione che mescolava frame
+     * diversi (vedi [normalizeToFrame]) e ricalcola la focale da quelli.
+     *
+     * La verifica in sospeso di quelle lenti si cancella: il numero arrivava da
+     * un'altra calibrazione e non si sa a quale frame fosse riferito, quindi
+     * confrontarlo con una misura nuova darebbe un allarme falso. La focale,
+     * invece, si ricava dai punti riscalati, che sono dati veri.
+     *
+     * Ritorna true se ha cambiato qualcosa.
+     */
+    private fun repairStoredFrames(): Boolean {
+        var riparato = false
+        prefs.all.keys
+            .filter { it.startsWith(POINTS_PREFIX) && it != KEY_POINTS }
+            .forEach { key ->
+                val lens = key.removePrefix(POINTS_PREFIX)
+                val punti = parsePoints(prefs.getString(key, null).orEmpty())
+                val sistemati = repairedFrames(punti) ?: return@forEach
+                savePoints(lens, sistemati)
+                saveFocal(lens, recomputeFocal(sistemati))
+                prefs.edit().apply {
+                    remove(verifyFxKey(lens))
+                    remove(verifyFyKey(lens))
+                    apply()
+                }
+                riparato = true
+            }
+        if (riparato) _verificationExpected.value = loadVerification()
+        return riparato
     }
 
     /** Fattore di conversione dai pixel salvati ai pixel di [frameLongSide]. */

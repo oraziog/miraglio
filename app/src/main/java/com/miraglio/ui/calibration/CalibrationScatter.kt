@@ -2,6 +2,10 @@ package com.miraglio.ui.calibration
 
 import com.miraglio.data.focal.FocalPoint
 import kotlin.math.abs
+import kotlin.math.ceil
+import kotlin.math.floor
+import kotlin.math.log10
+import kotlin.math.pow
 
 /** Un punto sul grafico della calibrazione. */
 data class ScatterPoint(
@@ -10,7 +14,11 @@ data class ScatterPoint(
     /** Quanta focale implicherebbe questo punto (px del frame di analisi). */
     val focalPx: Float,
     /** true: sta lontano dalla retta di piu' della tolleranza. */
-    val outlier: Boolean
+    val outlier: Boolean,
+    /** Dimensione nota e asse del punto: servono per riproporre la misura. */
+    val knownSizeM: Float,
+    /** "H" o "V", come su `FocalPoint.axis`. */
+    val axis: String
 )
 
 /**
@@ -82,7 +90,14 @@ fun calibrationScatter(
         if (punto.distanceM > 0f && punto.distanceM.isFinite() &&
             focale > 0f && focale.isFinite()
         ) {
-            ScatterPoint(id = punto.id, distanceM = punto.distanceM, focalPx = focale, outlier = false)
+            ScatterPoint(
+                id = punto.id,
+                distanceM = punto.distanceM,
+                focalPx = focale,
+                outlier = false,
+                knownSizeM = punto.knownSizeM,
+                axis = punto.axis
+            )
         } else {
             null
         }
@@ -113,6 +128,65 @@ fun calibrationScatter(
 
 /** Soglia di scostamento dalla retta oltre la quale un punto e' un indiziato. */
 const val DEFAULT_OUTLIER_TOLERANCE = 0.10f
+
+/**
+ * Valori "tondi" da scrivere sotto l'asse della distanza, al massimo
+ * [maxTicks] e tutti dentro `[min, max]`.
+ *
+ * Il passo si sceglie fra 1, 2 e 5 volte una potenza di dieci: sono i passi
+ * che una persona legge senza fare conti (5, 10, 15), mentre un passo pari a
+ * `(max-min)/3` darebbe etichette come "9,33" che non aiutano a riconoscere
+ * il punto sulla scala.
+ *
+ * Con estremi che coincidono (una sola distanza, o asse non ancora aperto)
+ * l'unica tacca sensata e' il valore stesso: le tacche non inventano un
+ * intervallo che i dati non hanno.
+ */
+fun axisTicks(min: Float, max: Float, maxTicks: Int = 4): List<Float> {
+    if (!min.isFinite() || !max.isFinite() || maxTicks < 2) return emptyList()
+    // Estremi invertiti: non e' un asse con un valore solo, e' un intervallo
+    // che non esiste. Disegnarci una tacca la metterebbe fuori dal grafico.
+    if (max < min) return emptyList()
+    if (max == min) return listOf(min)
+
+    val span = (max - min).toDouble()
+    // Passo "ideale": lo spazio diviso per il numero di intervalli. Si parte
+    // da una potenza di dieci sotto quella del passo ideale e si sale (1, 2, 5,
+    // 10, 20, 50...). Vince il primo passo che lascia **almeno due** tacche e
+    // non piu' di [maxTicks].
+    //
+    // Non basta dividere lo spazio per il numero di intervalli: su un asse
+    // largo 725 px (700-1400, un grafico vero) il passo ideale sarebbe ~240 e
+    // il criterio "span / passo <= 3" accetterebbe 500, lasciando una tacca
+    // sola a 1000. Con il conteggio reale dei multipli vince 200, che da'
+    // 800, 1000, 1200 e 1400.
+    val base = 10.0.pow(floor(log10(span / (maxTicks - 1))))
+    val steps = listOf(1.0, 2.0, 5.0, 10.0, 20.0, 50.0).map { it * base }
+    return steps.firstNotNullOfOrNull { step ->
+        ticksFor(min, max, step, maxTicks).takeIf { it.size >= 2 }
+    } ?: ticksFor(min, max, steps.last(), maxTicks).ifEmpty { listOf(min) }
+}
+
+/** Multipli di [step] dentro `[min, max]`, se non sono piu' di [maxTicks]. */
+private fun ticksFor(min: Float, max: Float, step: Double, maxTicks: Int): List<Float> {
+    val first = ceil(min / step).toLong()
+    val last = floor(max / step).toLong()
+    if (last < first) return emptyList()
+    val count = last - first + 1
+    if (count > maxTicks) return emptyList()
+    return (first..last).map { (it * step).toFloat() }
+}
+
+/**
+ * Cifre decimali da mostrare per un passo di [step]: un passo da 5 m si legge
+ * "5", uno da 0,5 yd si legge "0,5".
+ */
+fun tickDecimals(step: Float): Int = when {
+    !step.isFinite() || step <= 0f -> 0
+    step >= 1f -> 0
+    step >= 0.1f -> 1
+    else -> 2
+}
 
 private fun median(values: List<Float>): Float {
     val ordinate = values.sorted()

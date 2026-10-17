@@ -1,6 +1,7 @@
 package com.miraglio.data.focal
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Test
 
 /**
@@ -75,6 +76,75 @@ class FocalFrameNormalizationTest {
         assertEquals(listOf(1280, 1280), normalizzati.map { it.frameLongSide })
         assertEquals("il vecchio raddoppia, il nuovo resta com'era", 200f, normalizzati[0].pixels, 0.01f)
         assertEquals(400f, normalizzati[1].pixels, 0.01f)
+    }
+
+    /**
+     * Un punto costruito a ritroso dalla focale che deve implicare, sul frame
+     * in cui e' stato misurato: cosi' il test dice "questo punto e' giusto" e
+     * non dipende dalla formula del pinhole.
+     */
+    private fun puntoDaFocale(
+        id: Long,
+        distanceM: Float,
+        focalPx: Float,
+        frameLongSide: Int
+    ) = punto(
+        id = id,
+        distanceM = distanceM,
+        pixels = focalPx * 1.3f / distanceM,
+        frameLongSide = frameLongSide
+    )
+
+    /**
+     * Il caso vero del guasto: tre misure a 640 e una aggiunta dopo
+     * l'aggiornamento a 1280. La media dei pixel non confrontabili da' una
+     * focale del 25% piu' alta, e chi ha in mano quel telefono non lo sa. La
+     * riparazione deve rimettere i punti sullo stesso frame e far tornare la
+     * focale vera, senza buttare via nessuna misura.
+     */
+    @Test
+    fun `una calibrazione a 640 con un punto a 1280 si ripara da sola`() {
+        val veraFocaleA640 = 700f
+        val punti = listOf(
+            puntoDaFocale(id = 1, distanceM = 10f, focalPx = veraFocaleA640, frameLongSide = 640),
+            puntoDaFocale(id = 2, distanceM = 20f, focalPx = veraFocaleA640, frameLongSide = 640),
+            puntoDaFocale(id = 3, distanceM = 30f, focalPx = veraFocaleA640, frameLongSide = 640),
+            puntoDaFocale(id = 4, distanceM = 40f, focalPx = veraFocaleA640 * 2f, frameLongSide = 1280)
+        )
+
+        assertEquals(
+            "prima della riparazione la media e' proprio quella sbagliata",
+            (veraFocaleA640 * 1.25f).toDouble(),
+            punti.map { it.impliedFocalPx }.average(),
+            0.5
+        )
+
+        val riparati = requireNotNull(repairedFrames(punti))
+
+        assertEquals(List(4) { CURRENT_FRAME_LONG_SIDE }, riparati.map { it.frameLongSide })
+        assertEquals(
+            "la focale che ne esce e' quella vera, al frame nuovo",
+            (veraFocaleA640 * 2f).toDouble(),
+            riparati.map { it.impliedFocalPx }.average(),
+            0.01
+        )
+    }
+
+    /** Chi ha tutte le misure a 640 non ha niente da riparare: il suo dato e' sano. */
+    @Test
+    fun `una calibrazione tutta a 640 resta com'e`() {
+        val punti = listOf(
+            puntoDaFocale(id = 1, distanceM = 10f, focalPx = 700f, frameLongSide = 640),
+            puntoDaFocale(id = 2, distanceM = 30f, focalPx = 700f, frameLongSide = 640)
+        )
+
+        assertNull(repairedFrames(punti))
+    }
+
+    @Test
+    fun `un punto solo non e' un guasto da riparare`() {
+        assertNull(repairedFrames(listOf(punto(distanceM = 20f, pixels = 91f, frameLongSide = 640))))
+        assertNull(repairedFrames(emptyList()))
     }
 
     @Test

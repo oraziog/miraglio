@@ -491,6 +491,34 @@ class FocalCaptureViewModel @Inject constructor(
     /** Precompilazione del campo dimensione con una misura in metri. */
     private fun sizeText(meters: Float): String =
         texts.format.number(texts.format.sizeValue(meters), 0)
+
+    /**
+     * Compila la schermata dal grafico della calibrazione: la misura da rifare
+     * arriva con la distanza, la dimensione del bersaglio e l'asse che aveva.
+     *
+     * Senza questa precompilazione "rifai la misura" voleva dire ricopiare a
+     * mano tre numeri al sole, ed e' il momento in cui si sbaglia.
+     */
+    fun prefillDistance(distanceM: Float?, sizeM: Float?, axis: String?) {
+        val s = _uiState.value
+        var next = s
+        if (sizeM != null && sizeM > 0f) {
+            next = next.copy(knownSizeM = sizeM, sizeInput = sizeText(sizeM))
+        }
+        if (distanceM != null && distanceM > 0f) {
+            next = next.copy(
+                distanceInput = texts.format.number(texts.format.distanceValue(distanceM), 1)
+            )
+        }
+        if (axis == "H" || axis == "V") {
+            next = next.copy(
+                orientation = if (axis == "H") LineOrientation.HORIZONTAL
+                else LineOrientation.VERTICAL
+            )
+        }
+        _uiState.value = next
+    }
+
     /** Focale implicita compensata per lo zoom corrente. */
     fun currentImpliedFocal(): Float? {
         val s = _uiState.value

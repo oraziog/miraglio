@@ -179,7 +179,7 @@ fun PlacesScreen(
  * premuto Salva e vuole comunque mandare il numero.
  */
 @Composable
-private fun HistorySection(
+internal fun HistorySection(
     entries: List<HistoryEntry>,
     onClear: () -> Unit
 ) {

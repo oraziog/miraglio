@@ -87,6 +87,28 @@ class CalibrationScatterTest {
     }
 
     /**
+     * L'indiziato non deve dire solo "sei sbagliato": deve portare con se'
+     * distanza, dimensione del bersaglio e asse, che sono quello che il
+     * pulsante "Rifai ..." ricompila nella schermata di calibrazione.
+     */
+    @Test
+    fun LIndiziatoSaComeSiRifaLaMisura() {
+        val conOutlier = puntiGiusti + punto(
+            id = 99,
+            distanceM = 50f,
+            focalPx = 1400f,
+            knownSizeM = 0.5f
+        ).copy(axis = "V")
+
+        val scatter = requireNotNull(calibrationScatter(conOutlier))
+        val indiziato = scatter.outliers.single()
+
+        assertEquals(50f, indiziato.distanceM, 0f)
+        assertEquals(0.5f, indiziato.knownSizeM, 0f)
+        assertEquals("V", indiziato.axis)
+    }
+
+    /**
      * Con due punti la retta passa per tutti e due: non esiste uno scostamento,
      * quindi non si puo' accusare nessuno. Segnalarne uno sarebbe un giudizio
      * senza dati.

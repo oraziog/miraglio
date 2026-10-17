@@ -26,9 +26,13 @@ Le linee **orizzontali** misurano l'**altezza**, quelle **verticali** la **largh
 
 ## Le tacche sul mirino (MOA e pollici a 20 iarde)
 
-Sul bordo sinistro dell'immagine — sia in mira sia sul fermo immagine — c'è una
-**scala di tacche** con lo zero al centro dell'inquadratura. Serve a confrontare
-il bersaglio con il proprio mirino senza togliere l'occhio da lì.
+Sul bordo sinistro dell'immagine **in mira** c'è una **scala di tacche** con lo
+zero al centro dell'inquadratura. Serve a confrontare il bersaglio con il
+proprio mirino senza togliere l'occhio da lì.
+
+Sul **fermo immagine** le tacche non ci sono più: lì la misura la fa già la
+distanza fra le due linee, e le tacche coprivano la foto proprio nel momento in
+cui si controlla che le linee stiano sui bordi dell'oggetto.
 
 Accanto alla scala l'app scrive due numeri, e sono sempre **la stessa cosa detta
 in due modi**:
@@ -237,18 +241,39 @@ in avanti, non riscrive i luoghi salvati.
 
 Sotto i valori c'è il grafico: **distanza** sull'asse orizzontale, **focale
 implicita** su quello verticale, con l'unità scritta sugli assi (metri o iarde
-secondo l'unità scelta, sempre px per la focale). I punti corretti stanno sulla
-retta di regressione; quelli misurati male sono cerchiati in **rosso**.
+secondo l'unità scelta, sempre px per la focale). Tutti e due gli assi hanno i
+**numeri delle tacche**: la distanza in basso (5, 10, 15…) e la focale a
+sinistra (600, 800, 1000…), con una linea leggera che attraversa il grafico a
+ogni valore. Così si legge non solo a che distanza ma anche **a che focale** sta
+ogni punto, e quanto è lontano dalla riga dove dovrebbe stare; da ogni punto
+scende inoltre un **trattino leggero** fino all'asse delle distanze. I punti
+corretti stanno sulla retta di regressione; quelli misurati male sono
+cerchiati in **rosso**.
 
-Quando un punto è fuori linea l'app scrive **a quali distanze rifare la misura**:
-cancella quel punto e rimisura **quella distanza**, non tutta la calibrazione.
-Un punto sbagliato pesa molto sulla media, soprattutto se per quell'asse ci sono
-pochi punti (con tre misure di altezza, ognuna vale un terzo di fy).
+Quando un punto è fuori linea l'app scrive **a quali distanze rifare la misura**
+e sotto compare un pulsante per ciascuna distanza (**"Rifai 5 m"**): aprono la
+schermata di calibrazione con distanza, dimensione del bersaglio e asse già
+compilati, quindi basta inquadrare, segnare le due linee e salvare. Fatta la
+nuova misura, cancella il punto vecchio: rimisura **quella distanza**, non tutta
+la calibrazione. Un punto sbagliato pesa molto sulla media, soprattutto se per
+quell'asse ci sono pochi punti (con tre misure di altezza, ognuna vale un terzo
+di fy).
 
 Sotto il grafico c'è anche lo **scarto massimo**: se nessun punto è rosso ma il
 numero è vicino al 10%, la calibrazione è ancora dentro la tolleranza ma rifare
 le misure più scostate la rende più stretta. Con uno scarto basso non c'è niente
 da rifare, anche se due punti sembrano lontani sulla scala del disegno.
+
+**Se hai calibrato con una versione precedente non devi rifare niente.** Le
+misure prese quando l'app analizzava a metà risoluzione vengono riportate da
+sole a quella attuale, e la focale si ricalcola da quelle: le distanze erano
+giuste prima e restano giuste. Le versioni precedenti però mescolavano i due
+tipi di misura quando se ne aggiungeva una nuova dopo l'aggiornamento, e la
+focale usciva circa un quarto troppo alta; l'app se ne accorge all'avvio e
+rimette i punti d'accordo. Se sul grafico vedi un punto isolato che sta al
+doppio degli altri, aggiorna e riapri la schermata: se resta lì, è una misura
+davvero da rifare. Rifare tutta la calibrazione serve solo a stringerla, non a
+correggerla.
 
 ### Zoom e calibrazione
 

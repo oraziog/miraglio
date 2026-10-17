@@ -2,6 +2,7 @@ package com.miraglio.ui.focal
 
 import android.Manifest
 import android.content.pm.PackageManager
+import android.content.res.Configuration
 import android.graphics.Bitmap
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -18,11 +19,8 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.aspectRatio
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -55,6 +53,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
@@ -64,6 +63,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -79,6 +79,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.miraglio.R
 import com.miraglio.ui.capture.LineOrientation
 import com.miraglio.ui.i18n.LocalDisplayFormat
+import com.miraglio.ui.layout.AimLayout
 import kotlin.math.abs
 import kotlin.math.min
 import kotlin.math.roundToInt
@@ -87,6 +88,10 @@ import kotlin.math.roundToInt
 @Composable
 fun FocalCaptureScreen(
     onNavigateBack: () -> Unit,
+    // Arrivo dal grafico della calibrazione: la misura da rifare e' gia' nota.
+    prefillDistanceM: Float? = null,
+    prefillSizeM: Float? = null,
+    prefillAxis: String? = null,
     viewModel: FocalCaptureViewModel = hiltViewModel()
 ) {
     val context = LocalContext.current
@@ -118,6 +123,19 @@ fun FocalCaptureScreen(
     LaunchedEffect(Unit) {
         if (!hasPermission) {
             permissionLauncher.launch(Manifest.permission.CAMERA)
+        }
+    }
+
+    // Distanza, dimensione e asse della misura da rifare: si compilano una
+    // volta sola, appena la schermata esiste, prima che l'utente tocchi altro.
+    // Il flag salvato evita che una rotazione o un ritorno dallo sfondo
+    // riscriva i campi sopra a quello che l'utente ha corretto a mano.
+    var prefillApplied by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        if (prefillApplied) return@LaunchedEffect
+        prefillApplied = true
+        if (prefillDistanceM != null || prefillSizeM != null || prefillAxis != null) {
+            viewModel.prefillDistance(prefillDistanceM, prefillSizeM, prefillAxis)
         }
     }
 
@@ -174,76 +192,56 @@ fun FocalCaptureScreen(
             )
         }
     ) { padding ->
-        Column(
+        // Stessa disposizione della schermata Misura (AimLayout): in verticale i
+        // pannelli sotto l'immagine, in orizzontale accanto. Ed e' anche la
+        // stessa gestione della tastiera: il padding dell'IME si toglie allo
+        // spazio disponibile QUI, cosi' a rimpicciolirsi e' l'immagine. Prima
+        // lo si toglieva al pannello, che ha altezza fissa (200 dp): con la
+        // tastiera aperta il padding la mangiava tutta, il pannello si
+        // schiacciava a zero e i campi "distanza" e "dimensione" sparivano
+        // proprio mentre si scriveva dentro.
+        val landscape = LocalConfiguration.current.orientation ==
+            Configuration.ORIENTATION_LANDSCAPE
+        AimLayout(
+            landscape = landscape,
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
-        ) {
-            val bmp = frozenBitmap
-            if (state.frozen && bmp != null && bmp.width > 0 && bmp.height > 0) {
-                // Fermo immagine IN CIMA: la foto occupa tutta la larghezza nel suo
-                // aspect (niente bande sopra/sotto), e il pannello sta ai suoi piedi.
-                FocalLinesOverlay(
-                    bitmap = bmp,
-                    orientation = state.orientation,
-                    lineA = state.lineA,
-                    lineB = state.lineB,
-                    onAxisTap = viewModel::registerAxisTap,
-                    onPanCommit = viewModel::panLines,
-                    onSpreadCommit = viewModel::spreadLines,
-                    onMoveFirst = viewModel::moveFirstLine,
-                    onMoveSecond = viewModel::moveSecondLine,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .aspectRatio(bmp.width.toFloat() / bmp.height.toFloat())
-                )
+                .imePadding(),
+            image = { imageModifier ->
+                val bmp = frozenBitmap
+                when {
+                    // Fermo immagine: la foto riempie l'area e ci si adatta
+                    // dentro da sola (il disegno la centra), quindi
+                    // rimpicciolisce con l'area quando la tastiera chiede
+                    // spazio invece di spingere il pannello fuori schermo.
+                    state.frozen && bmp != null && bmp.width > 0 && bmp.height > 0 ->
+                        FocalLinesOverlay(
+                            bitmap = bmp,
+                            orientation = state.orientation,
+                            lineA = state.lineA,
+                            lineB = state.lineB,
+                            onAxisTap = viewModel::registerAxisTap,
+                            onPanCommit = viewModel::panLines,
+                            onSpreadCommit = viewModel::spreadLines,
+                            onMoveFirst = viewModel::moveFirstLine,
+                            onMoveSecond = viewModel::moveSecondLine,
+                            modifier = imageModifier
+                        )
 
-                // Pannello parametri subito dopo il fermo immagine.
-                FocalInputPanel(
-                    state = state,
-                    impliedFocal = viewModel.currentImpliedFocal(),
-                    savedTotal = savedPoints.size + state.savedCount,
-                    zoomRatio = zoomRatio,
-                    lensLabel = lensLabel,
-                    onSizeChanged = viewModel::setSizeInput,
-                    onDistanceChanged = viewModel::setDistanceInput,
-                    onCapture = viewModel::freezeFrame,
-                    onRetake = viewModel::unfreeze,
-                    onSave = viewModel::savePoint,
-                    onZoomReset = viewModel::resetZoom,
-                    onCycleLens = viewModel::cycleLens,
-                    onToggleOrientation = viewModel::toggleOrientation,
-                    onMarkTarget = { runGps(viewModel::markTargetHere) },
-                    onGpsDistance = { runGps(viewModel::useGpsDistance) },
-                    verificationExpectedPx = verificationExpectedPx,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 12.dp, vertical = 8.dp)
-                        .imePadding()
-                )
-
-                // Giace in basso: tutto il resto dello schermo resta vuoto.
-                Spacer(modifier = Modifier.weight(1f))
-            } else {
-                // Anteprima live in alto, controlli sotto di essa.
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .weight(1f)
-                ) {
-                    if (!hasPermission) {
-                        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    !hasPermission ->
+                        Box(modifier = imageModifier, contentAlignment = Alignment.Center) {
                             Text(stringResource(R.string.camera_permission_required))
                         }
-                    } else {
-                        FocalLivePreview(
-                            viewModel = viewModel,
-                            lifecycleOwner = lifecycleOwner,
-                            modifier = Modifier.fillMaxSize()
-                        )
-                    }
-                }
 
+                    else -> FocalLivePreview(
+                        viewModel = viewModel,
+                        lifecycleOwner = lifecycleOwner,
+                        modifier = imageModifier
+                    )
+                }
+            },
+            panels = { panelsModifier ->
                 FocalInputPanel(
                     state = state,
                     impliedFocal = viewModel.currentImpliedFocal(),
@@ -261,13 +259,10 @@ fun FocalCaptureScreen(
                     onMarkTarget = { runGps(viewModel::markTargetHere) },
                     onGpsDistance = { runGps(viewModel::useGpsDistance) },
                     verificationExpectedPx = verificationExpectedPx,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 12.dp, vertical = 8.dp)
-                        .imePadding()
+                    modifier = panelsModifier.padding(horizontal = 12.dp, vertical = 8.dp)
                 )
             }
-        }
+        )
     }
 }
 
@@ -488,7 +483,7 @@ private fun FocalLinesOverlay(
 private const val EXAMPLE_DISTANCE_M = 30f
 
 @Composable
-private fun FocalInputPanel(
+internal fun FocalInputPanel(
     state: FocalCaptureUiState,
     impliedFocal: Float?,
     savedTotal: Int,
@@ -514,8 +509,14 @@ private fun FocalInputPanel(
     )
     val focalLabel = if (horizontal) "fy" else "fx"
 
+    // Altezza NON fissa: il pannello prende quella che serve al suo contenuto,
+    // e si ferma all'altezza che resta (la colonna interna scorre). Con
+    // un'altezza fissa da 200 dp, quando la tastiera si apriva in orizzontale
+    // non ci stava piu' niente: ne' il pannello ne' i campi. Cosi' invece si
+    // adatta da solo: intero dove c'e' spazio, ridotto e scorrevole dove non
+    // ce n'e' (tastiera aperta, telefono in orizzontale).
     Card(
-        modifier = if (state.frozen) modifier.height(200.dp) else modifier,
+        modifier = modifier,
         colors = CardDefaults.cardColors(containerColor = Color(0xC7000000))
     ) {
         Column(

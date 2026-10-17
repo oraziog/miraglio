@@ -16,6 +16,11 @@ coreKtx = "1.15.0"
 exifinterface = "1.3.7"
 junit = "4.13.2"
 json = "20260814"
+# Screenshot test del grafico: Robolectric disegna il Compose vero sul JVM,
+# Roborazzi salva il PNG e lo confronta con quello di riferimento.
+robolectric = "4.14.1"
+roborazzi = "1.44.0"
+androidxTestJunit = "1.2.1"
 
 [libraries]
 # Compose
@@ -26,6 +31,10 @@ compose-ui-tooling-preview = { group = "androidx.compose.ui", name = "ui-tooling
 compose-ui-tooling = { group = "androidx.compose.ui", name = "ui-tooling" }
 compose-material3 = { group = "androidx.compose.material3", name = "material3" }
 compose-material-icons = { group = "androidx.compose.material", name = "material-icons-extended" }
+# Solo test: rende il Compose in un test JVM (con Robolectric) e ne cattura
+# l'immagine. `ui-test-manifest` serve a creare l'Activity che ospita il test.
+compose-ui-test-junit4 = { group = "androidx.compose.ui", name = "ui-test-junit4" }
+compose-ui-test-manifest = { group = "androidx.compose.ui", name = "ui-test-manifest" }
 
 # Lifecycle & Navigation
 lifecycle-process = { group = "androidx.lifecycle", name = "lifecycle-process", version.ref = "lifecycleRuntime" }
@@ -68,6 +77,10 @@ junit = { group = "junit", name = "junit", version.ref = "junit" }
 # org.json non esiste sul percorso di compilazione dei test JVM (su Android lo
 # porta la piattaforma): serve solo ai test, non finisce nell'APK.
 json = { group = "org.json", name = "json", version.ref = "json" }
+robolectric = { group = "org.robolectric", name = "robolectric", version.ref = "robolectric" }
+roborazzi = { group = "io.github.takahirom.roborazzi", name = "roborazzi", version.ref = "roborazzi" }
+roborazzi-compose = { group = "io.github.takahirom.roborazzi", name = "roborazzi-compose", version.ref = "roborazzi" }
+androidx-test-junit = { group = "androidx.test.ext", name = "junit", version.ref = "androidxTestJunit" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
@@ -75,3 +88,4 @@ kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
 kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
 hilt = { id = "com.google.dagger.hilt.android", version.ref = "hilt" }
 ksp = { id = "com.google.devtools.ksp", version.ref = "ksp" }
+roborazzi = { id = "io.github.takahirom.roborazzi", version.ref = "roborazzi" }

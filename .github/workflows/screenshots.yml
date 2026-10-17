@@ -1,0 +1,60 @@
+name: Screenshot
+
+# Gira su ogni push e su ogni pull request, non sui tag: qui non si pubblica
+# niente, si controlla che i disegni (grafico e pannello della calibrazione,
+# pannello della misura, cronologia dei luoghi, card delle impostazioni) siano
+# ancora quelli attesi. La release (release.yml) ha gia' i suoi test; questo e'
+# il controllo che i test normali non possono fare, perche' un'etichetta
+# sovrapposta a un punto e' codice corretto e immagine sbagliata.
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  screenshot:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Codice
+        uses: actions/checkout@v7
+
+      - name: JDK 17
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "17"
+          # La cache di Gradle tiene anche il jar android-all di Robolectric
+          # (centinaia di MB): senza, ogni run se lo riscarica.
+          cache: gradle
+
+      # `verifyRoborazziDebug` esegue i test JVM come `testDebugUnitTest`, ma
+      # con Roborazzi in modalita' verifica: ogni `captureRoboImage` ridisegna
+      # il suo pezzo e confronta il PNG con quello in app/src/test/screenshots.
+      # Una differenza oltre la tolleranza fa fallire il task, e con lui il job.
+      - name: Confronta gli screenshot con i PNG di riferimento
+        run: ./gradlew --no-daemon verifyRoborazziDebug
+
+      # Anche quando il confronto fallisce (anzi, soprattutto allora): qui ci
+      # sono l'immagine appena disegnata, il diff rosso e il report HTML. Senza
+      # questi file un job rosso direbbe solo "diverso", non "dove".
+      - name: Immagini e differenze
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: screenshot-immagini
+          path: app/build/outputs/roborazzi
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Report e risultati del test
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: screenshot-report
+          path: |
+            app/build/reports/roborazzi
+            app/build/test-results/roborazzi
+          if-no-files-found: warn
+          retention-days: 30

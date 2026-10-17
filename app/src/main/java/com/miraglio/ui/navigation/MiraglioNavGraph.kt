@@ -46,7 +46,14 @@ fun MiraglioNavGraph(navController: NavHostController) {
         composable(Screen.Calibration.route) {
             CalibrationScreen(
                 onNavigateBack = { navController.popBackStack() },
-                onNavigateToFocalCapture = { navController.navigate(Screen.FocalCapture.route) },
+                onNavigateToFocalCapture = {
+                    navController.navigate(Screen.FocalCapture.route())
+                },
+                // Dal grafico: la schermata si apre con la misura sbagliata
+                // gia' compilata, cosi' "rifai" non vuol dire ricopiare numeri.
+                onRedoDistance = { distanceM, sizeM, axis ->
+                    navController.navigate(Screen.FocalCapture.route(distanceM, sizeM, axis))
+                },
                 onNavigateToTransfer = {
                     navController.navigate(Screen.CalibrationTransfer.route)
                 }
@@ -59,9 +66,35 @@ fun MiraglioNavGraph(navController: NavHostController) {
             )
         }
 
-        composable(Screen.FocalCapture.route) {
+        composable(
+            route = Screen.FocalCapture.route,
+            arguments = listOf(
+                navArgument(Screen.FocalCapture.ARG_DISTANCE) {
+                    type = NavType.StringType
+                    defaultValue = ""
+                },
+                navArgument(Screen.FocalCapture.ARG_SIZE) {
+                    type = NavType.StringType
+                    defaultValue = ""
+                },
+                navArgument(Screen.FocalCapture.ARG_AXIS) {
+                    type = NavType.StringType
+                    defaultValue = ""
+                }
+            )
+        ) { entry ->
+            val argomenti = entry.arguments
             FocalCaptureScreen(
-                onNavigateBack = { navController.popBackStack() }
+                onNavigateBack = { navController.popBackStack() },
+                prefillDistanceM = argomenti
+                    ?.getString(Screen.FocalCapture.ARG_DISTANCE)
+                    ?.toFloatOrNull(),
+                prefillSizeM = argomenti
+                    ?.getString(Screen.FocalCapture.ARG_SIZE)
+                    ?.toFloatOrNull(),
+                prefillAxis = argomenti
+                    ?.getString(Screen.FocalCapture.ARG_AXIS)
+                    ?.takeIf { it == "H" || it == "V" }
             )
         }
 

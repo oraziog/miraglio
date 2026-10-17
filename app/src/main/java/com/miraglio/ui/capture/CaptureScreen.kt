@@ -111,6 +111,7 @@ import com.miraglio.domain.reticle.reticleScale
 import com.miraglio.domain.share.ShareMessageComposer
 import com.miraglio.domain.vision.DetectionBox
 import com.miraglio.ui.i18n.LocalDisplayFormat
+import com.miraglio.ui.layout.AimLayout
 import com.miraglio.ui.places.PlaceShareBar
 import com.miraglio.ui.places.ShareIntents
 import com.miraglio.ui.theme.LocalOutdoorMode
@@ -344,9 +345,6 @@ fun CaptureScreen(
                         onSpreadCommit = viewModel::spreadLines,
                         onMoveFirst = viewModel::moveFirstLine,
                         onMoveSecond = viewModel::moveSecondLine,
-                        reticleFocalPx = captureState.reticleFocalPx,
-                        reticleTargetM = captureState.reticleTargetM,
-                        reticleDistanceM = result?.distanceMeters,
                         modifier = Modifier.fillMaxSize()
                     )
                 } else {
@@ -516,38 +514,6 @@ fun CaptureScreen(
                 }
             }
         )
-    }
-}
-
-/**
- * Disposizione della schermata di mira: l'immagine e i pannelli.
- *
- * In verticale i pannelli stanno **sotto** l'immagine (ed e' la disposizione
- * di sempre); in orizzontale **accanto**, perche' li' l'altezza e' poca e
- * l'immagine finirebbe in una striscia: il mirino si guarda, i pannelli si
- * leggono, e le due cose non devono contendersi lo stesso spazio.
- *
- * Ai due blocchi si passa il [Modifier] della propria area: cosi' chi li
- * scrive non deve sapere in che verso e' girato il telefono.
- */
-@Composable
-private fun AimLayout(
-    landscape: Boolean,
-    modifier: Modifier = Modifier,
-    image: @Composable (Modifier) -> Unit,
-    panels: @Composable (Modifier) -> Unit
-) {
-    if (landscape) {
-        Row(modifier = modifier) {
-            // L'immagine prende la parte piu' larga: e' quella che si guarda.
-            image(Modifier.weight(1.45f).fillMaxHeight())
-            panels(Modifier.weight(1f).fillMaxHeight())
-        }
-    } else {
-        Column(modifier = modifier) {
-            image(Modifier.fillMaxWidth().weight(1f))
-            panels(Modifier.fillMaxWidth())
-        }
     }
 }
 
@@ -736,9 +702,6 @@ private fun LineeFrozenOverlay(
     onSpreadCommit: (Float) -> Unit,
     onMoveFirst: (Float) -> Unit,
     onMoveSecond: (Float) -> Unit,
-    reticleFocalPx: Float?,
-    reticleTargetM: Float?,
-    reticleDistanceM: Float?,
     modifier: Modifier = Modifier
 ) {
     // Colori delle linee sopra l'immagine: in outdoor la primaria diventa
@@ -930,20 +893,10 @@ private fun LineeFrozenOverlay(
             }
         }
 
-        // Tacche del mirino sopra l'immagine, con la stessa geometria del canvas
-        // qui sopra (stesse variabili di scala e di offset): cosi' tacche e
-        // linee di misura non possono disallinearsi.
-        ReticleScaleLayer(
-            focalPx = reticleFocalPx,
-            targetSizeM = reticleTargetM,
-            distanceM = reticleDistanceM,
-            frameWidth = bitmap.width,
-            frameHeight = bitmap.height,
-            displayW = displayW,
-            displayH = displayH,
-            offsetY = offsetY,
-            modifier = Modifier.fillMaxSize()
-        )
+        // Niente tacche MOA sul fermo immagine: la misura la fa gia' la distanza
+        // tra le due linee, e le tacche coprivano la foto proprio nel momento in
+        // cui si guarda se le linee stanno sui bordi. In mira live restano (li'
+        // servono a stimare a occhio, prima dello scatto).
     }
 }
 
@@ -1211,7 +1164,7 @@ private fun panelFieldColors() = OutlinedTextFieldDefaults.colors(
 )
 
 @Composable
-private fun MeasureModePanel(
+internal fun MeasureModePanel(
     direction: MeasureDirection,
     orientation: LineOrientation,
     heightInput: String,
@@ -1421,7 +1374,7 @@ private val FROZEN_CONTROLS_HEIGHT = 200.dp
  * L'altezza resta FISSA per modalita': cambiare da distanza ad altezza non
  * ridimensiona l'immagine sopra, che era il motivo dell'altezza fissa.
  */
-private val FrozenControlsHeight: Dp
+internal val FrozenControlsHeight: Dp
     @Composable get() = if (LocalOutdoorMode.current) FROZEN_CONTROLS_HEIGHT * 1.3f else FROZEN_CONTROLS_HEIGHT
 
 /**

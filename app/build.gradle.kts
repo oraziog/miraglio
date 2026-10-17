@@ -9,6 +9,7 @@ plugins {
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.hilt)
     alias(libs.plugins.ksp)
+    alias(libs.plugins.roborazzi)
 }
 
 android {
@@ -118,6 +119,15 @@ android {
         buildConfig = true
     }
 
+    testOptions {
+        unitTests {
+            // Robolectric ha bisogno delle risorse compilate: il test del
+            // grafico legge le stringhe ("focale (px)") e il tema dell'app, e
+            // senza questa riga `getString` esplode nel test JVM.
+            isIncludeAndroidResources = true
+        }
+    }
+
     lint {
         // AGP aggancia gia' lint al task `check` (check -> lint -> lintDebug):
         // qui si alza solo la soglia. Con warningsAsErrors qualsiasi
@@ -138,6 +148,14 @@ android {
         // configurazione che AAPT2 accetta per <adaptive-icon>.
         disable += "ObsoleteSdkInt"
     }
+}
+
+// I PNG di riferimento stanno nel repository (src/test/screenshots), non in
+// build/: sono l'atteso contro cui la CI confronta, quindi devono essere
+// versionati. `gradle.properties` aggiunge la strategia di percorso che fa
+// scrivere `captureRoboImage("nome.png")` dentro questa cartella.
+roborazzi {
+    outputDir.set(file("src/test/screenshots"))
 }
 
 dependencies {
@@ -191,4 +209,16 @@ dependencies {
     // GitHub, cioe' le due cose che decidono se e come l'app si aggiorna.
     testImplementation(libs.junit)
     testImplementation(libs.json)
+
+    // Screenshot test: Robolectric disegna il Compose sul JVM e Roborazzi
+    // cattura il PNG. Gira in `testDebugUnitTest`, quindi senza emulatore.
+    testImplementation(platform(libs.compose.bom))
+    testImplementation(libs.compose.ui.test.junit4)
+    testImplementation(libs.androidx.test.junit)
+    testImplementation(libs.robolectric)
+    testImplementation(libs.roborazzi)
+    testImplementation(libs.roborazzi.compose)
+    // L'Activity che `createComposeRule` apre per disegnare il contenuto: la
+    // dichiara il manifest di debug, non quello dell'app.
+    debugImplementation(libs.compose.ui.test.manifest)
 }
