@@ -48,6 +48,30 @@ data class FocalPoint(
 }
 
 /**
+ * Porta tutti i punti alla stessa risoluzione di analisi [frameLongSide].
+ *
+ * I punti di una generazione precedente (640x480) hanno i pixel dimezzati
+ * rispetto ai nuovi (1280x960): mescolarli senza riscalarli falserebbe la media
+ * della focale (un punto vecchio e uno nuovo "implicherebbero" focali diverse
+ * per lo stesso obiettivo). Il riscalamento conserva la focale implicita, quindi
+ * non cambia il significato delle misure.
+ */
+internal fun normalizeToFrame(
+    points: List<FocalPoint>,
+    frameLongSide: Int
+): List<FocalPoint> = points.map { punto ->
+    val da = punto.frameLongSide
+    if (da <= 0 || da == frameLongSide) {
+        punto.copy(frameLongSide = frameLongSide)
+    } else {
+        punto.copy(
+            pixels = punto.pixels * frameLongSide.toFloat() / da.toFloat(),
+            frameLongSide = frameLongSide
+        )
+    }
+}
+
+/**
  * Focale camera persistente, per-lente. La calibrazione è salvata per ogni
  * obiettivo (id camera), più una "lente principale" (1x). Quando la lente
  * attiva non è calibrata si ripiega sulla focale della lente 1x.
@@ -233,7 +257,12 @@ class FocalCalibrationStore @Inject constructor(
             zoom = zoom,
             frameLongSide = frameLongSide
         )
-        val updated = loadPoints(lens) + point
+        // Il punto nuovo arriva alla risoluzione corrente: i punti vecchi
+        // vengono portati alla stessa, altrimenti la media mescolerebbe pixel
+        // di frame diversi (vedi [normalizeToFrame]).
+        val esistenti = loadPoints(lens)
+        val base = maxOf(frameLongSide, esistenti.maxOfOrNull { it.frameLongSide } ?: frameLongSide)
+        val updated = normalizeToFrame(esistenti + point, base)
         savePoints(lens, updated)
         saveFocal(lens, recomputeFocal(updated))
         publish()
@@ -242,7 +271,8 @@ class FocalCalibrationStore @Inject constructor(
 
     fun deletePoint(id: Long) {
         val lens = _activeLens.value ?: return
-        val updated = loadPoints(lens).filterNot { it.id == id }
+        val restanti = loadPoints(lens).filterNot { it.id == id }
+        val updated = normalizeToFrame(restanti, restanti.maxOfOrNull { it.frameLongSide } ?: CURRENT_FRAME_LONG_SIDE)
         savePoints(lens, updated)
         saveFocal(lens, recomputeFocal(updated))
         publish()
@@ -313,8 +343,12 @@ class FocalCalibrationStore @Inject constructor(
     fun replaceLenses(pointsByLens: Map<String, List<FocalPoint>>) {
         pointsByLens.forEach { (lens, punti) ->
             if (punti.isEmpty()) return@forEach
-            savePoints(lens, punti)
-            val focal = recomputeFocal(punti)
+            // Anche un file importato puo' contenere punti di risoluzioni
+            // diverse (telefono passato per piu' versioni): si unificano alla
+            // piu' grande, che e' quella che porta piu' dettaglio.
+            val unificati = normalizeToFrame(punti, punti.maxOf { it.frameLongSide })
+            savePoints(lens, unificati)
+            val focal = recomputeFocal(unificati)
             saveFocal(lens, focal)
             // La focale appena scritta diventa quella "attesa": la prima
             // misura di prova su un bersaglio noto la confronta col numero
