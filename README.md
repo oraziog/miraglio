@@ -439,12 +439,21 @@ Come sono rientrati i quattro che mancavano:
 
 I residui, ognuno con la sua ragione letta sul segnale:
 
-- **22**: la corda parte dentro una vocale forte e sostenuta (grave 0,15–0,19 per
-  un quarto di secondo): il rilascio non esiste come transiente isolato e il
-  click è coperto. Il motore misura una frase a 385,137 s e ne ricava 79 m.
-  Provato a trattare la ripresa come scocco quando ha un tonfo grave, ma una
-  vocale è a banda larga quanto una corda: inventa il tiro da 79 m e ne rompe
-  21. Scartato.
+- **22**: qui non c'è niente da agganciare, e la misura spettrale lo dice. La
+  firma di uno scocco — acuto 6–12 kHz ≥ 0,05 **e** tonfo grave ≥ 0,10 entro
+  ±20 ms — c'è in 39 riferimenti su 40; al 386,88 s l'acuto sopra 6 kHz vale
+  **0,007** contro 0,065–0,391 degli altri tiri (il più debole è il 3), mentre il
+  grave a 0,211 è la vocale sostenuta. Scandendo 386,40–389,40 s ogni 5 ms non
+  esiste **nessun** evento con quella firma. L'unico transiente meccanico della
+  zona è un click a 387,05 s (6–12 kHz 0,189, grave 0,077), cioè **170 ms dopo**
+  il riferimento e senza scocco che lo segua: il clicker ha scattato, la corda
+  no, o il suo suono è coperto dalla voce. Provate e scartate, misurando: la
+  ripresa come scocco quando c'è un tonfo grave (una vocale è a banda larga
+  quanto una corda: inventa un tiro da 79 m e ne rompe 21); l'ampiezza a banda
+  intera (0,25 contro 0,41 del click, nessuna separazione); il confronto con la
+  forma d'onda dei click validati (al 386,88 s non c'è fronte da confrontare).
+  Il motore resta a 39/40: nessuna regola che agganci questa vocale senza
+  inventare un tiro.
 - **10**: una vocale maschera il battifreccia e il grave resta sotto soglia;
   il tiro misura 56,9 m.
 - **21**: il battifreccia torna da 70 m quasi senza energia sotto 1,5 kHz
