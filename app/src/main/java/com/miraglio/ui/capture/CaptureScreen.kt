@@ -36,6 +36,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.DarkMode
+import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.LocationOn
@@ -130,6 +131,7 @@ private val FosforoGreen: Color = Color(0xFF64DD17)
 fun CaptureScreen(
     onNavigateToCalibration: () -> Unit = {},
     onNavigateToMeasurement: () -> Unit = {},
+    onNavigateToAudio: () -> Unit = {},
     onNavigateToPlaces: () -> Unit = {},
     onNavigateToSettings: () -> Unit = {},
     viewModel: CaptureViewModel = hiltViewModel()
@@ -227,6 +229,16 @@ fun CaptureScreen(
                                 onClick = {
                                     menuOpen = false
                                     onNavigateToMeasurement()
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text(stringResource(R.string.audio_title)) },
+                                leadingIcon = {
+                                    Icon(Icons.Default.GraphicEq, contentDescription = null)
+                                },
+                                onClick = {
+                                    menuOpen = false
+                                    onNavigateToAudio()
                                 }
                             )
                             DropdownMenuItem(

@@ -3,6 +3,9 @@ package com.miraglio.ui.navigation
 sealed class Screen(val route: String) {
     data object Capture : Screen("capture")
     data object Measurement : Screen("measurement")
+    /** Telemetro acustico: misura del tempo di volo e calibrazione guidata. */
+    data object AudioRangefinder : Screen("audio")
+    data object AudioCalibration : Screen("audio_calibration")
     data object Calibration : Screen("calibration")
     data object CalibrationTransfer : Screen("calibration_transfer")
     data object Settings : Screen("settings")

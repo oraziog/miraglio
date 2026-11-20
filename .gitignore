@@ -27,6 +27,15 @@ keystore.properties
 .freebuff/
 
 # ---------------------------------------------------------------------------
+# Audio e video di lavoro nella radice del progetto: non fanno parte dell'app
+# (i suoni del telemetro sono sintetici, vedi i test) e un MP3 da 20 MB in un
+# commit non si toglie piu' dalla storia.
+# ---------------------------------------------------------------------------
+*.mp3
+*.wav
+*.m4a
+
+# ---------------------------------------------------------------------------
 # IDE
 # ---------------------------------------------------------------------------
 .idea/

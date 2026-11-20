@@ -10,10 +10,13 @@ import com.miraglio.domain.audio.ShotTimingMachine
 import com.miraglio.domain.audio.ShotTimingState
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.withContext
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlin.math.abs
 
 /**
  * Il telemetro acustico completo: microfono, filtri, macchina a stati.
@@ -48,7 +51,8 @@ class AcousticRangefinder @Inject constructor(
      * [releaseOffsetMs] arrivano dal profilo arco.
      *
      * [onState] riceve ogni cambio di stato utile all'interfaccia — è pensato
-     * per una callback veloce, non per lavoro pesante.
+     * per una callback veloce, non per lavoro pesante. [onLevel] riceve il
+     * picco di ogni blocco letto, per il grafico della forma d'onda.
      */
     @RequiresPermission(Manifest.permission.RECORD_AUDIO)
     suspend fun measure(
@@ -57,7 +61,8 @@ class AcousticRangefinder @Inject constructor(
         stability: StateFlow<Boolean>,
         sampleRateHz: Int = AudioCaptureSource.DEFAULT_SAMPLE_RATE,
         sessionTimeoutS: Double = DEFAULT_SESSION_TIMEOUT_S,
-        onState: (ShotTimingState) -> Unit = {}
+        onState: (ShotTimingState) -> Unit = {},
+        onLevel: (Float) -> Unit = {}
     ): ShotTimingState = withContext(Dispatchers.Default) {
 
         val source = AudioCaptureSource(context, sampleRateHz)
@@ -82,6 +87,11 @@ class AcousticRangefinder @Inject constructor(
 
         try {
             while (true) {
+                // L'arresto dall'interfaccia deve fermare il ciclo subito, non
+                // alla fine del timeout: senza questo controllo un `cancel()`
+                // lascerebbe il microfono aperto fino a dodici secondi.
+                currentCoroutineContext().ensureActive()
+
                 val elapsedS = (System.nanoTime() - startedAtNs) / 1_000_000_000.0
                 if (elapsedS > sessionTimeoutS) {
                     machine.reset()
@@ -90,6 +100,13 @@ class AcousticRangefinder @Inject constructor(
 
                 val read = source.read(buffer)
                 if (read <= 0) break
+
+                var level = 0f
+                for (i in 0 until read) {
+                    val magnitude = abs(buffer[i])
+                    if (magnitude > level) level = magnitude
+                }
+                onLevel(level)
 
                 analyzer.processBlock(buffer, read).forEach { machine.onEvent(it) }
                 machine.onProgress(analyzer.sampleIndex)

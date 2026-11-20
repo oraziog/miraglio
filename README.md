@@ -510,10 +510,12 @@ Audio", non all'avvio, e l'app funziona identica senza
 ## Roadmap
 
 - [ ] Telemetro acustico (in corso): distanza dal tempo di volo misurato col
-  microfono. Motore DSP, stabilità del telefono, profili arco e modello
-  balistico sono implementati e coperti da test JVM (`domain/audio`,
-  `domain/sensor`, `data/profile`, `domain/ballistics`); manca la schermata di
-  misura e la calibrazione guidata. Specifica in
+  microfono. Motore DSP, stabilità del telefono, profili arco, modello
+  balistico, schermata di misura (stato della macchina a stati, Δt, distanza,
+  velocità, forma d'onda con zoom 1×–8×) e calibrazione guidata sono
+  implementati e coperti da test JVM. Manca la validazione sul campo:
+  accuratezza a 70 m, offset reale del clicker, comportamento con vento e
+  rumore di fondo. Specifica in
   [`ARCHERY_AUDIO_RANGEFINDER_SPEC.md`](ARCHERY_AUDIO_RANGEFINDER_SPEC.md)
 - [ ] Test automatici (unit/UI) sui calcoli di distanza e condivisione
 - [ ] Validazione sul campo della calibrazione contro distanze note

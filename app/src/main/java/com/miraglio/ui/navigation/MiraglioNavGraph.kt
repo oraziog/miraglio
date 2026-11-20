@@ -6,6 +6,8 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.NavType
 import androidx.navigation.navArgument
+import com.miraglio.ui.audio.AudioCalibrationScreen
+import com.miraglio.ui.audio.AudioRangefinderScreen
 import com.miraglio.ui.calibration.CalibrationScreen
 import com.miraglio.ui.calibration.CalibrationTransferScreen
 import com.miraglio.ui.capture.CaptureScreen
@@ -25,6 +27,7 @@ fun MiraglioNavGraph(navController: NavHostController) {
             CaptureScreen(
                 onNavigateToCalibration = { navController.navigate(Screen.Calibration.route) },
                 onNavigateToMeasurement = { navController.navigate(Screen.Measurement.route) },
+                onNavigateToAudio = { navController.navigate(Screen.AudioRangefinder.route) },
                 onNavigateToPlaces = { navController.navigate(Screen.Places.route) },
                 onNavigateToSettings = { navController.navigate(Screen.Settings.route) }
             )
@@ -41,6 +44,19 @@ fun MiraglioNavGraph(navController: NavHostController) {
                 onNavigateBack = { navController.popBackStack() },
                 onNavigateToPlaces = { navController.navigate(Screen.Places.route) }
             )
+        }
+
+        composable(Screen.AudioRangefinder.route) {
+            AudioRangefinderScreen(
+                onNavigateBack = { navController.popBackStack() },
+                onNavigateToCalibration = {
+                    navController.navigate(Screen.AudioCalibration.route)
+                }
+            )
+        }
+
+        composable(Screen.AudioCalibration.route) {
+            AudioCalibrationScreen(onNavigateBack = { navController.popBackStack() })
         }
 
         composable(Screen.Calibration.route) {
