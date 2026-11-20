@@ -423,22 +423,35 @@ La tabella che stampa confronta ogni scocco misurato dal motore con i quaranta
 riferimenti misurati a mano su una registrazione di dodici minuti (40 tiri a
 ~70 m, con la voce del conduttore sopra), con l'errore in millisecondi, il Δ
 misurato e la distanza che ne ricava il modello balistico. Sullo stesso file,
-in modalità continua: **36 scocchi su 40** entro 120 ms (tolleranza dettata dai
+in modalità continua: **39 scocchi su 40** entro 120 ms (tolleranza dettata dai
 riferimenti letti a mano, dalla latenza del decoder MP3 e dall'inviluppo
-STA/LTA), errore mediano **+8 ms** con scarto tipo 7 ms, e **33 tiri su 36** con
-la distanza fra **65 e 75 m** (media 69,8 m; i quattro non agganciati sono
-3, 20, 22, 34).
+STA/LTA), errore mediano **+8 ms** con scarto tipo 7 ms, e **36 tiri su 39** con
+la distanza fra **65 e 75 m** (media 69,8 m; l'unico non agganciato è il 22).
 
-I tre residui, ognuno con la sua ragione letta sul segnale:
+Come sono rientrati i quattro che mancavano:
 
-- **18**: una sillaba a 0,65 s dalla corda, a banda larga come un urto ma a 33 m
-  di distanza equivalente. Il veto di plausibilità la scarta, e il tiro torna a
-  69,7 m.
+- **3, 20, 34**: il primo picco acuto era una frase e la finestra dei 450 ms si
+  chiudeva prima dello scocco vero, così il click del clicker finiva preso per
+  rilascio (149 ms prima). Adesso un transiente acuto almeno quattro volte il
+  "click" in corso è il click vero: sui tre tiri la frase sta a 0,003–0,006 e il
+  click a 0,25–0,40, mentre su tutti i quaranta tiri lo scocco non supera mai il
+  click di più di 3 volte. I tre tornano a 69,8, 69,8 e 70,0 m.
+
+I residui, ognuno con la sua ragione letta sul segnale:
+
+- **22**: la corda parte dentro una vocale forte e sostenuta (grave 0,15–0,19 per
+  un quarto di secondo): il rilascio non esiste come transiente isolato e il
+  click è coperto. Il motore misura una frase a 385,137 s e ne ricava 79 m.
+  Provato a trattare la ripresa come scocco quando ha un tonfo grave, ma una
+  vocale è a banda larga quanto una corda: inventa il tiro da 79 m e ne rompe
+  21. Scartato.
+- **10**: una vocale maschera il battifreccia e il grave resta sotto soglia;
+  il tiro misura 56,9 m.
 - **21**: il battifreccia torna da 70 m quasi senza energia sotto 1,5 kHz
   (0,006 contro 0,056 in alto), quindi il rilevatore grave non lo vede; vince
-  un'esplosiva del parlato.
+  un'esplosiva del parlato (86,9 m).
 - **26**: un transiente debole 130 ms prima tiene il rilevatore in trigger e
-  l'impatto, venti volte più forte, cade dentro la stessa finestra.
+  l'impatto, venti volte più forte, cade dentro la stessa finestra (64,3 m).
 
 Fra quel che è stato provato e misurato, senza effetto o peggio: selezione per
 rapporto STA/LTA, per durata del transiente, con la soglia del ramo grave

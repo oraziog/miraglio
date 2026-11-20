@@ -124,6 +124,35 @@ class ShotTimingTest {
         assertEquals(1.000, measurement.totalTimeS.toDouble(), 0.005)
     }
 
+    /**
+     * La frase non è un click, anche se arriva prima: il click del clicker è di
+     * un'altra classe di ampiezza e riapre la finestra dei 450 ms.
+     *
+     * Qui la frase sta a 0,600 s con 0,03 di ampiezza, il click a 1,000 con
+     * 0,85 e lo scocco a 1,150 con 0,90. Senza riancoratura la finestra della
+     * frase arriverebbe solo a 1,050 s e sceglierebbe il click come rilascio:
+     * Δt 1,595 s invece di 1,445. Con la riancoratura il riferimento torna sullo
+     * scocco.
+     */
+    @Test
+    fun laFraseNonPrendeIlPostoDelClick() {
+        val signal = SyntheticShot.signal(
+            sampleRateHz = sampleRate,
+            durationS = 3.6,
+            bursts = listOf(
+                SyntheticShot.Burst(atS = 0.600, freqHz = 4000.0, amplitude = 0.03f, lengthMs = 4.0),
+                SyntheticShot.Burst(atS = 1.000, freqHz = 4000.0, amplitude = 0.85f, lengthMs = 4.0),
+                SyntheticShot.Burst(atS = 1.150, freqHz = 4000.0, amplitude = 0.90f, lengthMs = 6.0),
+                SyntheticShot.Burst(atS = 2.595, freqHz = 300.0, amplitude = 0.45f, lengthMs = 25.0)
+            )
+        )
+
+        val state = run(throughWav(signal), useClicker = true)
+
+        assertEquals(ShotStage.DONE, state.stage)
+        assertEquals(1.445, state.measurement!!.totalTimeS.toDouble(), 0.005)
+    }
+
     /** Clicker che scatta ma nessuna corda che parte: si torna a sorvegliare. */
     @Test
     fun clickerSenzaRilascioTornaPronto() {

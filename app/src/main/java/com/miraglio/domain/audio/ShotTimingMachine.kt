@@ -110,6 +110,10 @@ data class ShotTimingConfig(
  * dentro i 450 ms successivi: così un pre-click (la punta che sfiora il
  * bottone, o il rumore della corda che sfrega) non viene scambiato per il
  * rilascio solo perché arriva prima.
+ *
+ * Il primo transiente può però essere una frase: quando ne arriva un altro
+ * almeno [ANCORA_CLICK_FACTOR] volte più forte, quello è il click vero e la
+ * finestra riparte da lì (vedi [onEvent]).
  */
 class ShotTimingMachine(
     private val config: ShotTimingConfig = ShotTimingConfig()
@@ -198,8 +202,19 @@ class ShotTimingMachine(
 
                 event.branch == ShotBranch.HIGH_BAND -> {
                     // Con il clicker il primo picco acuto è il click; quelli
-                    // dopo sono candidati al rilascio.
-                    if (click == null) click = event else releaseCandidates += event
+                    // dopo sono candidati al rilascio. Ma il primo picco può
+                    // essere una frase: il click vero, quando arriva, è di
+                    // un'altra classe di ampiezza (vedi [ANCORA_CLICK_FACTOR]).
+                    val clickEvent = click
+                    when {
+                        clickEvent == null -> click = event
+                        event.peakAmplitude >= clickEvent.peakAmplitude * ANCORA_CLICK_FACTOR -> {
+                            click = event
+                            releaseCandidates = mutableListOf()
+                        }
+
+                        else -> releaseCandidates += event
+                    }
                 }
 
                 else -> lowEvents += event
@@ -458,6 +473,19 @@ class ShotTimingMachine(
          * il doppio separa i due casi senza prendere abbagli.
          */
         const val RESTART_FACTOR = 2.0f
+
+        /**
+         * Di quanto un transiente acuto deve superare il "click" in corso per
+         * essere il click vero.
+         *
+         * Sui tiri 3, 34 e 20 della registrazione il primo picco acuto è una
+         * frase (0,003–0,006) e il click del clicker arriva 350–470 ms dopo a
+         * 0,25–0,40, cioè 50–113 volte tanto; lo scocco della corda, che viene
+         * dopo il click, non supera mai il click di più di 3 volte su tutti i
+         * quaranta tiri. Quattro lascia fuori le frasi e non tocca la coppia
+         * click→scocco.
+         */
+        const val ANCORA_CLICK_FACTOR = 4.0f
 
         /**
          * Di quanto può distare l'acuto dall'impatto perché siano lo stesso

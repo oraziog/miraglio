@@ -102,4 +102,76 @@ class RealRecordingTest {
         ) { "il modello deve produrre una distanza" }
         assertEquals("distanza ricavata dal tiro", 70.0, distanza.toDouble(), 1.5)
     }
+
+    /**
+     * Il tiro 3 della registrazione (finestra 24,6–27,6 s), il caso in cui una
+     * frase prende il posto del click.
+     *
+     * La registrazione, in quel punto, ha una sillaba a 24,802 s (0,006 di
+     * acuto), il click del clicker a 25,161 (0,405) e lo scocco a 25,320
+     * (0,320). Prendendo per click la sillaba, la finestra dei 450 ms si chiude
+     * prima dello scocco e il click vero viene scelto come rilascio: il tiro
+     * misura 1,597 s e lo scocco risulta 149 ms prima del vero.
+     *
+     * Con la riancoratura ([ShotTimingMachine.ANCORA_CLICK_FACTOR]) il click
+     * vero, 67 volte più forte della sillaba, riapre la finestra e lo scocco
+     * torna al suo posto: Δ 1,438 s, cioè 69,8 m.
+     */
+    @Test
+    fun laFraseNonPrendeIlPostoDelClick() {
+        val file = temp.newFile("tiro_25_31.wav")
+        javaClass.getResourceAsStream("/audio/tiro_25_31.wav")!!.use { input ->
+            file.outputStream().use { output -> input.copyTo(output) }
+        }
+
+        val tiri = ShotAudioProbe.analizzaContinuo(file, useClicker = true, offsetMs = 0f)
+
+        assertEquals("la finestra contiene un solo tiro", 1, tiri.size)
+        val tiro = tiri.single()
+        assertEquals(
+            "lo scocco deve cadere dove l'ha visto chi ha misurato a mano",
+            0.720,
+            tiro.releaseS,
+            0.060
+        )
+        val tempo = requireNotNull(tiro.deltaS) { "il battifreccia deve esserci" }
+        assertEquals("scocco -> impatto, non click -> impatto", 1.438, tempo.toDouble(), 0.020)
+
+        val distanza = requireNotNull(
+            BallisticCalculator.distance(tempo, ShotAudioProbe.MODELLO, airTempC = 20f)
+        ) { "il modello deve produrre una distanza" }
+        assertEquals("distanza ricavata dal tiro", 70.0, distanza.toDouble(), 1.5)
+    }
+
+    /**
+     * Il tiro 20 della registrazione (finestra 356,0–359,4 s), la sessione
+     * fantasma che non si riapriva.
+     *
+     * Una frase a 356,428 s (0,005) viene presa per click e la sua finestra
+     * sceglie come rilascio un'altra sillaba a 356,571 (0,012). Il tiro vero è
+     * però lì: click a 356,899 (0,251, cinquanta volte la frase) e scocco a
+     * 357,049 (0,733). Prima della riancoratura il motore restava agganciato
+     * alla frase e misurava dal click sbagliato; adesso il click vero riapre la
+     * finestra e lo scocco è quello giusto: Δ 1,437 s, 69,8 m.
+     */
+    @Test
+    fun laSessioneFantasmaSiRiapreSulClickVero() {
+        val file = temp.newFile("tiro_357_05.wav")
+        javaClass.getResourceAsStream("/audio/tiro_357_05.wav")!!.use { input ->
+            file.outputStream().use { output -> input.copyTo(output) }
+        }
+
+        val tiri = ShotAudioProbe.analizzaContinuo(file, useClicker = true, offsetMs = 0f)
+
+        assertEquals("la finestra contiene un solo tiro", 1, tiri.size)
+        val tiro = tiri.single()
+        assertEquals("lo scocco", 1.049, tiro.releaseS, 0.060)
+        val tempo = requireNotNull(tiro.deltaS) { "il battifreccia deve esserci" }
+        assertEquals("scocco -> impatto", 1.437, tempo.toDouble(), 0.020)
+
+        val distanza = requireNotNull(
+            BallisticCalculator.distance(tempo, ShotAudioProbe.MODELLO, airTempC = 20f)
+        ) { "il modello deve produrre una distanza" }
+        assertEquals("distanza ricavata dal tiro", 70.0, distanza.toDouble(), 1.5)
+    }
 }
