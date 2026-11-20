@@ -33,6 +33,9 @@ keystore.properties
 # ---------------------------------------------------------------------------
 *.mp3
 *.wav
+# Eccezione: il WAV ritagliato da una registrazione reale è l'input di un test
+# di regressione (vedi RealRecordingTest), non un file di lavoro da tenere fuori.
+!app/src/test/resources/audio/*.wav
 *.m4a
 
 # ---------------------------------------------------------------------------

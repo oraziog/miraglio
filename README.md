@@ -392,6 +392,40 @@ il confronto fallisce, il job diventa rosso e pubblica come artefatti il PNG
 appena disegnato, il diff e il report HTML, così si vede *cosa* è cambiato e non
 solo *che* è cambiato.
 
+### Analizzare una registrazione reale (telemetro acustico)
+
+Il banco sintetico dice che il DSP misura bene due impulsi distanziati di un
+secondo. Non dice niente su un video dove sopra lo scocco c'è il parlato. Per
+quello c'è `ShotAudioProbe`, uno strumento che gira sulle classi di test (non
+entra nell'APK) e fa passare un WAV per **la pipeline vera**: stesso
+`AcousticShotAnalyzer`, stessa `ShotTimingMachine`, stesso pilotaggio a blocchi
+da 20 ms che usa `AcousticRangefinder`. Cambia solo la sorgente: un file invece
+del microfono.
+
+Serve un decodificatore audio sulla macchina, **non** nel progetto: `ffmpeg` (su
+Windows basta `pip install imageio-ffmpeg` e poi usare il binario che stampa
+`python -c "import imageio_ffmpeg;print(imageio_ffmpeg.get_ffmpeg_exe())"`).
+
+```bash
+# 1. decodifica: mono 16 bit, il formato che lo strumento sa leggere
+ffmpeg -i registrazione.mp3 -ac 1 -ar 48000 -sample_fmt s16 app/build/audio/tiri.wav
+
+# 2. analisi (percorso assoluto: il task gira nella cartella app/)
+./gradlew :app:analyzeShotAudio -Pwav=$PWD/app/build/audio/tiri.wav
+```
+
+Opzioni: `-Pmodo=continuo` (tutto il file d'un fiato invece di una sessione per
+tiro), `-PuseClicker=false`, `-PoffsetMs=150`, `-Pdump=app/build/audio/dump.tsv`
+(ogni rilevamento, per capire i mancati) e `-Ptrace` (i cambi di stato del
+motore).
+
+La tabella che stampa confronta ogni scocco misurato dal motore con i quaranta
+riferimenti misurati a mano su una registrazione di dodici minuti (40 tiri a
+~70 m, con la voce del conduttore sopra), con l'errore in millisecondi, il Δ
+misurato e la distanza che ne ricava il modello balistico. Sullo stesso file,
+in modalità continua: 36 scocchi su 40 entro 120 ms, errore mediano +8 ms
+(scarto tipo 7 ms), e i tiri con l'impatto pulito danno 69–71 m.
+
 ---
 
 ## Pubblicare una nuova versione

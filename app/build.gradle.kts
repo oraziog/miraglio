@@ -232,3 +232,46 @@ dependencies {
     debugImplementation(libs.compose.ui.test.manifest)
     releaseImplementation(libs.compose.ui.test.manifest)
 }
+
+// ---------------------------------------------------------------------------
+// Strumento offline per l'audio reale (ShotAudioProbe).
+//
+// Fa passare un WAV per la pipeline DSP del telemetro — lo stesso codice che
+// gira nel telefono — e confronta gli scocchi trovati con i quaranta misurati
+// a mano su una registrazione vera. Non entra nell'APK: gira sulle classi di
+// test.
+//
+//   # mp3 -> WAV mono 16 bit (ffmpeg serve solo qui, non al progetto)
+//   ffmpeg -i registrazione.mp3 -ac 1 -ar 48000 -sample_fmt s16 tiri.wav
+//   ./gradlew :app:analyzeShotAudio -Pwav=tiri.wav
+//
+// Facoltativi: -PuseClicker=false (senza clicker il primo picco è lo scocco)
+// e -PoffsetMs=150 (ritardo click->rilascio dichiarato nel profilo).
+// ---------------------------------------------------------------------------
+tasks.register<JavaExec>("analyzeShotAudio") {
+    group = "verification"
+    description =
+        "Passa un WAV per la pipeline del telemetro e confronta gli scocchi con i riferimenti."
+    dependsOn("compileDebugUnitTestKotlin")
+    classpath =
+        files(
+            layout.buildDirectory.dir("tmp/kotlin-classes/debug"),
+            layout.buildDirectory.dir("tmp/kotlin-classes/debugUnitTest")
+        ) + configurations.getByName("debugUnitTestRuntimeClasspath")
+    mainClass.set("com.miraglio.tools.ShotAudioProbe")
+    // Il file intero sta in memoria una volta sola, a blocchi: due gigabyte
+    // bastano per dodici minuti a 48 kHz anche con i buffer di lettura.
+    maxHeapSize = "2g"
+    providers.gradleProperty("dump").orNull?.let { systemProperty("shotProbeDump", it) }
+    if (providers.gradleProperty("trace").isPresent) systemProperty("shotProbeTrace", "1")
+    argumentProviders.add(
+        CommandLineArgumentProvider {
+            listOf(
+                providers.gradleProperty("wav").orNull ?: "",
+                providers.gradleProperty("modo").orNull ?: "tiro",
+                providers.gradleProperty("useClicker").orNull ?: "true",
+                providers.gradleProperty("offsetMs").orNull ?: "0"
+            )
+        }
+    )
+}

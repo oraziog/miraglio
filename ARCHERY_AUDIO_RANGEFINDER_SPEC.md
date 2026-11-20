@@ -85,7 +85,8 @@ Stati: `IDLE` → `SETTLING` → `READY` → `ARMED` → `RELEASE_DETECTED` → 
    - Il picco di rilascio sovrascrive N_rilascio. L'offset utente (ritardo click → rilascio) sposta il riferimento **dal click al rilascio**: con offset 0 si usa il picco, con offset dichiarato si usa click + offset. Sottrarlo a un picco già misurato conterebbe due volte lo stesso ritardo (su un clicker a 150 ms sono ~7 m a 70 m).
 3. **Clicker non attivo:** il primo picco ad alta energia avvia N_rilascio.
 4. **Impatto:** ricerca del picco su Ramo B tra 0.15 s e 2.20 s dal rilascio. L'ampiezza deve essere inferiore a quella del rilascio.
-5. **Fallback:** se non c'è impatto, lo stato va a `DONE_NO_IMPACT`. L'utente può inserire la distanza reale a posteriori. Il tiro viene salvato, ma marcato come non utilizzabile per il fit finché non ha anche un Δt valido.
+5. **Riavvio su un colpo più forte:** mentre si aspetta l'impatto (fino a 2,20 s) un transiente acuto **almeno il doppio** di quello che si sta cronometrando riapre il tiro da lì. In un campo silenzioso non capita mai; su una registrazione con il parlato, senza questa regola, il motore resta agganciato a una frase e non sente il tiro vero che arriva nel frattempo (misurato sul file di riferimento: 9 tiri su 40 invece di 36).
+6. **Fallback:** se non c'è impatto, lo stato va a `DONE_NO_IMPACT`. L'utente può inserire la distanza reale a posteriori. Il tiro viene salvato, ma marcato come non utilizzabile per il fit finché non ha anche un Δt valido.
 
 ## 5. Calibrazione Profilo Arco
 - Profilo identificato da un **nickname** che descrive la configurazione (es. "Olimpico 36#, riser X, flettenti Y, freccia Z").

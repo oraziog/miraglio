@@ -33,7 +33,16 @@ data class ShotMeasurement(
 data class ShotTimingState(
     val stage: ShotStage,
     val measurement: ShotMeasurement? = null,
-    val clickerUsed: Boolean = false
+    val clickerUsed: Boolean = false,
+    /**
+     * Da dove parte il cronometro, appena il rilascio è riconosciuto.
+     *
+     * Non è ridondante con [measurement]: quello esiste solo se si è sentito
+     * anche l'impatto, mentre lo scocco si sa già prima — serve a chi analizza
+     * una registrazione e vuole sapere se il motore ha agganciato il tiro, o
+     * all'interfaccia che può mostrare un "sentito scocco" durante l'attesa.
+     */
+    val releaseIndex: Long? = null
 ) {
     val isFinished: Boolean
         get() = stage == ShotStage.DONE || stage == ShotStage.DONE_NO_IMPACT
@@ -112,6 +121,15 @@ class ShotTimingMachine(
     private var lowEvents = mutableListOf<AcousticEvent>()
     private var highestIndex = 0L
 
+    /**
+     * Una promozione per tiro al massimo.
+     *
+     * Serve perch\u00e9 il caso da correggere \u00e8 uno solo: una frase presa per
+     * click prima del click vero. Senza limite, dopo la promozione il battito
+     * della corda pu\u00f2 superare di nuovo la soglia e il tiro riparte
+     * all'infinito, perdendolo.
+     */
+
     /** Azzera tutto e comincia ad aspettare che il telefono sia fermo. */
     fun startListening(useClicker: Boolean, releaseOffsetMs: Float) {
         clicker = useClicker
@@ -143,7 +161,10 @@ class ShotTimingMachine(
             ShotStage.ARMED -> when {
                 event.branch == ShotBranch.HIGH_BAND && !clicker -> {
                     release = event
-                    _state.value = _state.value.copy(stage = ShotStage.RELEASE_DETECTED)
+                    _state.value = _state.value.copy(
+                        stage = ShotStage.RELEASE_DETECTED,
+                        releaseIndex = event.peakIndex
+                    )
                 }
 
                 event.branch == ShotBranch.HIGH_BAND -> {
@@ -156,7 +177,11 @@ class ShotTimingMachine(
             }
 
             ShotStage.RELEASE_DETECTED, ShotStage.IMPACT_WAIT ->
-                if (event.branch == ShotBranch.LOW_BAND) lowEvents += event
+                if (event.branch == ShotBranch.LOW_BAND) {
+                    lowEvents += event
+                } else {
+                    ripartiSePiuForte(event)
+                }
 
             else -> Unit
         }
@@ -211,7 +236,46 @@ class ShotTimingMachine(
             _state.value = _state.value.copy(stage = ShotStage.READY)
         } else {
             release = best
-            _state.value = _state.value.copy(stage = ShotStage.RELEASE_DETECTED)
+            _state.value = _state.value.copy(
+                stage = ShotStage.RELEASE_DETECTED,
+                releaseIndex = releaseReference(best)
+            )
+        }
+    }
+
+    /**
+     * Mentre si aspetta l'impatto si resta sordi allo scocco successivo per
+     * due secondi e passa. In un campo silenzioso non succede niente (un tiro
+     * ogni decina di secondi), ma su una registrazione con il parlato il motore
+     * si aggancia a una frase e resta li' a fissarla mentre l'arciere tira:
+     * su quaranta tiri veri ne trovava nove.
+     *
+     * Il rimedio si basa su una differenza che i dati mostrano netta: lo scocco
+     * vero è il transiente acuto più forte del file, il parlato no. Se mentre
+     * si aspetta l'impatto arriva un transiente **almeno il doppio** di quello
+     * che si sta cronometrando, quello di prima era rumore: si riparte dal
+     * nuovo, svuotando anche i gravi già raccolti (erano il rumore di prima,
+     * non un impatto).
+     */
+    private fun ripartiSePiuForte(event: AcousticEvent) {
+        val corrente = release ?: return
+        if (event.peakAmplitude < corrente.peakAmplitude * RESTART_FACTOR) return
+
+        lowEvents = mutableListOf()
+        release = null
+        if (clicker) {
+            // Il nuovo colpo è il click: la corda deve ancora partire, e la sua
+            // finestra si apre da qui.
+            click = event
+            releaseCandidates = mutableListOf()
+            _state.value = ShotTimingState(ShotStage.ARMED, clickerUsed = true)
+        } else {
+            release = event
+            _state.value = ShotTimingState(
+                ShotStage.RELEASE_DETECTED,
+                clickerUsed = false,
+                releaseIndex = event.peakIndex
+            )
         }
     }
 
@@ -235,26 +299,8 @@ class ShotTimingMachine(
             return
         }
 
-        // Da dove parte il cronometro.
-        //
-        // Il picco trovato nella finestra è la corda che parte: il click del
-        // clicker è [click] e cade prima, fuori dalla finestra. Spostare
-        // indietro quel picco dell'offset dichiarato conterebbe due volte lo
-        // stesso ritardo — su un arco dove il click precede il rilascio di
-        // 150 ms, 1,445 s diventerebbero 1,595 s, cioè sette metri di troppo
-        // a 70 m.
-        //
-        // L'offset serve perciò a spostare il riferimento **dal click al
-        // rilascio**, non a correggere un rilascio già misurato: quando
-        // l'utente lo dichiara, il riferimento è il click più il ritardo. Con
-        // zero ("non lo so") resta la misura diretta del picco.
-        val clickEvent = click
-        val releaseIndex =
-            if (clicker && clickEvent != null && offsetSamples != 0L) {
-                clickEvent.peakIndex + offsetSamples
-            } else {
-                releaseEvent.peakIndex
-            }
+        // Da dove parte il cronometro: vedi [releaseReference].
+        val releaseIndex = releaseReference(releaseEvent)
         val totalTimeS = (best.peakIndex - releaseIndex) / samplesPerSecond
 
         _state.value = ShotTimingState(
@@ -266,8 +312,31 @@ class ShotTimingMachine(
                 releaseAmplitude = releaseEvent.peakAmplitude,
                 impactAmplitude = best.peakAmplitude
             ),
-            clickerUsed = clicker
+            clickerUsed = clicker,
+            releaseIndex = releaseIndex
         )
+    }
+
+    /**
+     * Da dove parte il cronometro per un rilascio già scelto.
+     *
+     * Il picco trovato nella finestra è la corda che parte: il click del
+     * clicker è [click] e cade prima, fuori dalla finestra. Spostare indietro
+     * quel picco dell'offset dichiarato conterebbe due volte lo stesso
+     * ritardo — su un arco dove il click precede il rilascio di 150 ms,
+     * 1,445 s diventerebbero 1,595 s, cioè sette metri di troppo a 70 m.
+     *
+     * L'offset serve perciò a spostare il riferimento **dal click al
+     * rilascio**: quando l'utente lo dichiara, il riferimento è il click più
+     * il ritardo. Con zero ("non lo so") resta la misura diretta del picco.
+     */
+    private fun releaseReference(releaseEvent: AcousticEvent): Long {
+        val clickEvent = click
+        return if (clicker && clickEvent != null && offsetSamples != 0L) {
+            clickEvent.peakIndex + offsetSamples
+        } else {
+            releaseEvent.peakIndex
+        }
     }
 
     /** Tiene solo gli eventi gravi che possono ancora cadere in una finestra. */
@@ -291,4 +360,15 @@ class ShotTimingMachine(
 
     private fun msToSamples(milliseconds: Float): Long =
         (milliseconds * samplesPerSecond / 1000f).toLong()
+
+    private companion object {
+        /**
+         * Di quanto un transiente deve essere più forte di quello in corso per
+         * far ripartire il tiro: sul file reale gli scocchi stanno a 27–85 di
+         * rapporto STA/LTA contro il 99° percentile del parlato a 14, quindi
+         * il doppio separa i due casi senza prendere abbagli.
+         */
+        const val RESTART_FACTOR = 2.0f
+
+    }
 }
