@@ -82,7 +82,7 @@ Stati: `IDLE` → `SETTLING` → `READY` → `ARMED` → `RELEASE_DETECTED` → 
 2. **Clicker attivo:**
    - Primo picco breve ad alta frequenza = click.
    - Finestra di 50–450 ms per il picco di rilascio. Se non arriva, `RESET` a `READY`.
-   - Il picco di rilascio sovrascrive N_rilascio. L'offset utente viene sottratto.
+   - Il picco di rilascio sovrascrive N_rilascio. L'offset utente (ritardo click → rilascio) sposta il riferimento **dal click al rilascio**: con offset 0 si usa il picco, con offset dichiarato si usa click + offset. Sottrarlo a un picco già misurato conterebbe due volte lo stesso ritardo (su un clicker a 150 ms sono ~7 m a 70 m).
 3. **Clicker non attivo:** il primo picco ad alta energia avvia N_rilascio.
 4. **Impatto:** ricerca del picco su Ramo B tra 0.15 s e 2.20 s dal rilascio. L'ampiezza deve essere inferiore a quella del rilascio.
 5. **Fallback:** se non c'è impatto, lo stato va a `DONE_NO_IMPACT`. L'utente può inserire la distanza reale a posteriori. Il tiro viene salvato, ma marcato come non utilizzabile per il fit finché non ha anche un Δt valido.

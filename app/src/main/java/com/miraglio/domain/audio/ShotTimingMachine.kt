@@ -235,11 +235,26 @@ class ShotTimingMachine(
             return
         }
 
-        // L'offset del clicker si sottrae al rilascio rilevato: il ritardo fra
-        // il click e la corda che parte è una proprietà dell'arco, e chi lo
-        // conosce lo dichiara una volta nel profilo.
+        // Da dove parte il cronometro.
+        //
+        // Il picco trovato nella finestra è la corda che parte: il click del
+        // clicker è [click] e cade prima, fuori dalla finestra. Spostare
+        // indietro quel picco dell'offset dichiarato conterebbe due volte lo
+        // stesso ritardo — su un arco dove il click precede il rilascio di
+        // 150 ms, 1,445 s diventerebbero 1,595 s, cioè sette metri di troppo
+        // a 70 m.
+        //
+        // L'offset serve perciò a spostare il riferimento **dal click al
+        // rilascio**, non a correggere un rilascio già misurato: quando
+        // l'utente lo dichiara, il riferimento è il click più il ritardo. Con
+        // zero ("non lo so") resta la misura diretta del picco.
+        val clickEvent = click
         val releaseIndex =
-            if (clicker) releaseEvent.peakIndex - offsetSamples else releaseEvent.peakIndex
+            if (clicker && clickEvent != null && offsetSamples != 0L) {
+                clickEvent.peakIndex + offsetSamples
+            } else {
+                releaseEvent.peakIndex
+            }
         val totalTimeS = (best.peakIndex - releaseIndex) / samplesPerSecond
 
         _state.value = ShotTimingState(

@@ -1,5 +1,7 @@
 package com.miraglio.domain.audio
 
+import com.miraglio.domain.ballistics.ArrowSpeedModel
+import com.miraglio.domain.ballistics.BallisticCalculator
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
@@ -157,26 +159,94 @@ class ShotTimingTest {
     }
 
     /**
-     * L'offset del clicker si sottrae al rilascio: con 30 ms dichiarati, lo
-     * stesso segnale misura 30 ms in più.
+     * L'offset dichiarato nel profilo è il ritardo fra click e rilascio: serve
+     * a spostare il riferimento **dal click al rilascio**, non a spostare
+     * indietro un rilascio già misurato.
+     *
+     * Il segnale è un tiro vero: click a 0,700 s, corda che parte 150 ms dopo,
+     * battifreccia 1,445 s dopo il rilascio. Il tempo giusto è 1,445 s sia con
+     * l'offset dichiarato sia senza. Se l'app lo sottraesse al picco direbbe
+     * 1,595 s: su un arco a 70 m sono circa sette metri di troppo, contro il
+     * criterio di un metro della specifica.
      */
     @Test
-    fun lOffsetDelClickerAllungaIlTempoMisurato() {
+    fun lOffsetDelClickerSpostaIlRiferimentoDalClickAlRilascio() {
         val signal = SyntheticShot.signal(
             sampleRateHz = sampleRate,
-            durationS = 3.6,
+            durationS = 5.2,
             bursts = listOf(
                 SyntheticShot.Burst(atS = 0.700, freqHz = 4000.0, amplitude = 0.85f, lengthMs = 4.0),
-                SyntheticShot.Burst(atS = 0.900, freqHz = 4000.0, amplitude = 0.90f, lengthMs = 6.0),
-                SyntheticShot.Burst(atS = 1.900, freqHz = 300.0, amplitude = 0.45f, lengthMs = 25.0)
+                SyntheticShot.Burst(atS = 0.850, freqHz = 4000.0, amplitude = 0.90f, lengthMs = 6.0),
+                SyntheticShot.Burst(atS = 2.295, freqHz = 300.0, amplitude = 0.45f, lengthMs = 25.0)
             )
         )
 
         val senzaOffset = run(throughWav(signal), useClicker = true, releaseOffsetMs = 0f)
-        val conOffset = run(throughWav(signal), useClicker = true, releaseOffsetMs = 30f)
+        val conOffset = run(throughWav(signal), useClicker = true, releaseOffsetMs = 150f)
 
-        assertEquals(1.000, senzaOffset.measurement!!.totalTimeS.toDouble(), 0.005)
-        assertEquals(1.030, conOffset.measurement!!.totalTimeS.toDouble(), 0.005)
+        assertEquals(ShotStage.DONE, senzaOffset.stage)
+        assertEquals(1.445, senzaOffset.measurement!!.totalTimeS.toDouble(), 0.005)
+        assertEquals(1.445, conOffset.measurement!!.totalTimeS.toDouble(), 0.005)
+    }
+
+    /**
+     * La registrazione vera, usata come regressione: 40 tiri filati su uno
+     * stesso bersaglio, scocco → suono dell'impatto con Δ medio 1,445 s, minimo
+     * 1,43 s e massimo 1,47 s (deviazione standard 6 ms). Ogni scocco è
+     * preceduto di circa 150 ms dal click del clicker.
+     *
+     * Due cose si verificano qui, e sono quelle che il telefono deve saper
+     * fare: che un clicker a 150 ms dal rilascio non sposti la misura (si
+     * dichiara l'offset nel profilo, e il tempo resta lo stesso), e che quei
+     * tempi, passati per la fisica, siano davvero un bersaglio a 70 m — il
+     * tiro a 70 m con una freccia intorno ai 56 m/s a destinazione dà ~1,24 s
+     * di volo più ~0,20 s di ritorno del suono.
+     */
+    @Test
+    fun laRegistrazioneRealeDaQuarantaTiriTornaA70Metri() {
+        // Modello compatibile con i valori della registrazione: 65 m/s in
+        // uscita e una perdita che a 70 m lascia 56,5 m/s (volo 1,24 s).
+        val model = ArrowSpeedModel(muzzleSpeedMs = 65f, decayPerM = 0.002f)
+
+        // Lo scatter della registrazione (±20 ms intorno alla media) vale da
+        // solo ±1,2 m a 70 m: la tolleranza per singolo tiro deve tenerne
+        // conto, e la media dei tiri è quella che deve cadere sul bersaglio.
+        val distances = mutableListOf<Float>()
+
+        listOf(1.43, 1.445, 1.47).forEach { delta ->
+            val signal = SyntheticShot.signal(
+                sampleRateHz = sampleRate,
+                // Deve superare la fine della finestra d'impatto (2,20 s dal
+                // rilascio) più il margine con cui la macchina decide.
+                durationS = 3.5,
+                bursts = listOf(
+                    // Click del clicker.
+                    SyntheticShot.Burst(atS = 0.700, freqHz = 4000.0, amplitude = 0.85f, lengthMs = 4.0),
+                    // Scocco: la corda che parte, 150 ms dopo il click.
+                    SyntheticShot.Burst(atS = 0.850, freqHz = 4000.0, amplitude = 0.90f, lengthMs = 6.0),
+                    // Impatto sul bersaglio, delta secondi dopo lo scocco.
+                    SyntheticShot.Burst(atS = 0.850 + delta, freqHz = 300.0, amplitude = 0.45f, lengthMs = 25.0)
+                )
+            )
+
+            val state = run(throughWav(signal), useClicker = true, releaseOffsetMs = 150f)
+
+            assertEquals("il tiro a $delta s deve chiudersi con una misura", ShotStage.DONE, state.stage)
+            val measurement = state.measurement!!
+            assertEquals("Δt misurato per un tiro a $delta s", delta, measurement.totalTimeS.toDouble(), 0.005)
+
+            val distance = BallisticCalculator.distance(measurement.totalTimeS, model, airTempC = 20f)
+            assertNotNull("il modello deve produrre una distanza", distance)
+            assertEquals("distanza ricavata dal tiro a $delta s", 70.0, distance!!.toDouble(), 1.5)
+            distances += distance!!
+        }
+
+        assertEquals(
+            "la media dei tiri deve cadere sul bersaglio",
+            70.0,
+            distances.average(),
+            0.5
+        )
     }
 
     /** Il motore non si arma finché il telefono non è fermo. */
