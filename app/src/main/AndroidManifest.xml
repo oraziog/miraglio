@@ -59,6 +59,23 @@
             </intent-filter>
         </activity>
 
+        <!-- Contenitore dei test Compose. `androidx.compose.ui:ui-test-manifest`
+             dichiara questa Activity vuota perche' `createComposeRule` la usi
+             come contenitore dove disegnare cio' che il test cattura; senza la
+             dichiarazione, Robolectric non la trova e gli screenshot test
+             falliscono nella variante release.
+
+             Qui se ne abbassa l'esportazione: l'Activity serve ai test, che
+             girano nello stesso pacchetto, non alle altre app — un'Activity
+             vuota avviabile dall'esterno dentro Miraglio non serve a nessuno.
+             `tools:replace` vince sulla dichiarazione della libreria, che la
+             farebbe esportata. Toglierla del tutto romperebbe i test: la
+             clausola che la rende innocua e' proprio questa. -->
+        <activity
+            android:name="androidx.activity.ComponentActivity"
+            android:exported="false"
+            tools:replace="android:exported" />
+
         <!-- Condivisione delle foto dei luoghi (URI content:// senza permessi). -->
         <provider
             android:name="androidx.core.content.FileProvider"
