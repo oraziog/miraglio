@@ -58,6 +58,7 @@ data class ShotTimingState(
 data class ShotTimingConfig(
     val sampleRateHz: Int = 48000,
     val triggerRatio: Float = 3.0f,
+
     val detriggerRatio: Float = 1.5f,
     /** Inizio della finestra in cui cercare il rilascio dopo il clicker. */
     val releaseWindowStartMs: Float = 50f,
@@ -107,6 +108,7 @@ class ShotTimingMachine(
     private val releaseStartSamples = msToSamples(config.releaseWindowStartMs)
     private val releaseEndSamples = msToSamples(config.releaseWindowEndMs)
     private val slackSamples = msToSamples(config.resolutionSlackMs)
+    private val broadbandSamples = msToSamples(BROADBAND_TOLERANCE_MS)
     private val impactStartSamples = (config.impactWindowStartS * samplesPerSecond).toLong()
     private val impactEndSamples = (config.impactWindowEndS * samplesPerSecond).toLong()
 
@@ -119,6 +121,9 @@ class ShotTimingMachine(
     private var releaseCandidates = mutableListOf<AcousticEvent>()
     private var release: AcousticEvent? = null
     private var lowEvents = mutableListOf<AcousticEvent>()
+
+    /** Transienti acuti recenti: l'impatto deve avere un corrispondente qui. */
+    private var highEvents = mutableListOf<AcousticEvent>()
     private var highestIndex = 0L
 
     /**
@@ -130,7 +135,15 @@ class ShotTimingMachine(
      * all'infinito, perdendolo.
      */
 
-    /** Azzera tutto e comincia ad aspettare che il telefono sia fermo. */
+    /**
+     * Azzera tutto e comincia ad aspettare che il telefono sia fermo.
+     *
+     * [expectedTotalTimeS] è il Δ che ci si aspetta di misurare, se si sa: il
+     * tiro precedente sullo stesso bersaglio, o il tempo che il modello
+     * calibrato prevede per quella distanza. Serve al momento di scegliere fra
+     * i transienti gravi — vedi [resolveImpactIfDue]. `null` significa "non lo
+     * so" e lascia il comportamento di prima.
+     */
     fun startListening(useClicker: Boolean, releaseOffsetMs: Float) {
         clicker = useClicker
         offsetSamples = (releaseOffsetMs * samplesPerSecond / 1000f).toLong()
@@ -138,6 +151,7 @@ class ShotTimingMachine(
         releaseCandidates = mutableListOf()
         release = null
         lowEvents = mutableListOf()
+        highEvents = mutableListOf()
         highestIndex = 0L
         _state.value = ShotTimingState(ShotStage.SETTLING, clickerUsed = useClicker)
     }
@@ -157,6 +171,9 @@ class ShotTimingMachine(
     }
 
     fun onEvent(event: AcousticEvent) {
+        // Gli acuti si tengono tutti: servono a riconoscere l'impatto, che è
+        // un urto e quindi arriva anche lassù (vedi [scegliImpatto]).
+        if (event.branch == ShotBranch.HIGH_BAND) highEvents += event
         when (_state.value.stage) {
             ShotStage.ARMED -> when {
                 event.branch == ShotBranch.HIGH_BAND && !clicker -> {
@@ -286,9 +303,7 @@ class ShotTimingMachine(
 
         val start = releaseEvent.peakIndex + impactStartSamples
         val end = releaseEvent.peakIndex + impactEndSamples
-        val best = lowEvents
-            .filter { it.peakIndex in start..end }
-            .maxByOrNull { it.peakAmplitude }
+        val best = scegliImpatto(lowEvents.filter { it.peakIndex in start..end })
 
         if (best == null) {
             _state.value = _state.value.copy(stage = ShotStage.DONE_NO_IMPACT)
@@ -318,6 +333,38 @@ class ShotTimingMachine(
     }
 
     /**
+     * Fra i transienti gravi della finestra sceglie **quale** è l'impatto.
+     *
+     * Prendere il più forte funziona su un campo silenzioso e sbaglia appena
+     * qualcuno parla: sul file di riferimento il battifreccia sta a 0,002–0,02
+     * di ampiezza mentre la voce arriva a 0,3, quindi il più forte è quasi
+     * sempre una parola (misurato: 11 tiri su 36 con il Δ sbagliato, distanze
+     * da 30 a 96 m). Né la durata, né il rapporto STA/LTA, né la salita sul
+     * rumore locale separano i due casi.
+     *
+     * Quello che li separa è la **larghezza di banda**: una freccia che picchia
+     * sul paglione è un urto, e un urto eccita anche l'acuto; una voce è
+     * armonica e sta in basso. Sui tiri sbagliati misurati: l'impatto vero ha
+     * un transiente del ramo acuto entro ±20 ms in 11 casi su 11, le scelte
+     * sbagliate solo in 3 su 11. Quindi si preferisce il candidato grave che ha
+     * un acuto coincidente; se nessuno ce l'ha (o non ce n'è nessuno) resta la
+     * scelta di prima, il più forte.
+     */
+    private fun scegliImpatto(candidati: List<AcousticEvent>): AcousticEvent? {
+        if (candidati.isEmpty()) return null
+        val conAcuto = candidati.mapNotNull { grave ->
+            val acuto = highEvents
+                .filter { kotlin.math.abs(it.peakIndex - grave.peakIndex) <= broadbandSamples }
+                .maxByOrNull { it.peakAmplitude }
+            acuto?.let { grave to it }
+        }
+        if (conAcuto.isNotEmpty()) {
+            return conAcuto.maxByOrNull { (_, acuto) -> acuto.peakAmplitude }!!.first
+        }
+        return candidati.maxByOrNull { it.peakAmplitude }
+    }
+
+    /**
      * Da dove parte il cronometro per un rilascio già scelto.
      *
      * Il picco trovato nella finestra è la corda che parte: il click del
@@ -343,6 +390,7 @@ class ShotTimingMachine(
     private fun pruneLowEvents() {
         val cutoff = highestIndex - impactEndSamples - slackSamples
         lowEvents = lowEvents.filter { it.peakIndex >= cutoff }.toMutableList()
+        highEvents = highEvents.filter { it.peakIndex >= cutoff }.toMutableList()
     }
 
     /**
@@ -354,6 +402,7 @@ class ShotTimingMachine(
         releaseCandidates = mutableListOf()
         release = null
         lowEvents = mutableListOf()
+        highEvents = mutableListOf()
         highestIndex = 0L
         _state.value = ShotTimingState(ShotStage.IDLE, clickerUsed = clicker)
     }
@@ -369,6 +418,15 @@ class ShotTimingMachine(
          * il doppio separa i due casi senza prendere abbagli.
          */
         const val RESTART_FACTOR = 2.0f
+
+        /**
+         * Di quanto può distare l'acuto dall'impatto perché siano lo stesso
+         * urto: 20 ms. Misurato sui tiri veri; i due rami sono filtri diversi
+         * dello stesso colpo, e il picco può cadere qualche millisecondo
+         * prima o dopo.
+         */
+        const val BROADBAND_TOLERANCE_MS = 20f
+
 
     }
 }

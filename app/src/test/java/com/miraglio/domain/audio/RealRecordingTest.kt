@@ -8,21 +8,22 @@ import org.junit.Test
 import org.junit.rules.TemporaryFolder
 
 /**
- * Un tiro vero, con il parlato sopra: il caso più difficile trovato sul campo.
+ * Un tiro vero, con la voce sopra: il caso più difficile che il motore
+ * sbagliava, ritagliato da una registrazione di dodici minuti al campo.
  *
- * La finestra è ritagliata da una registrazione di dodici minuti girata al
- * campo (40 tiri a un bersaglio a ~70 m, con la voce del conduttore sopra).
- * Il pezzo va da 158,0 a 164,0 s della registrazione originale: dentro c'è il
- * click del clicker a 2,53 s, lo scocco a 2,675 s e il suono dell'impatto
- * 1,441 s dopo. Il riferimento del tiro è 160,68 s.
+ * La finestra va da 140,0 a 146,0 s della registrazione originale (40 tiri a un
+ * bersaglio a ~70 m, con il conduttore che parla sopra). Dentro c'è il click a
+ * 1,50 s, lo scocco a 1,654 s e il battifreccia 1,442 s dopo. Il riferimento
+ * del tiro è 141,65 s.
  *
- * Questo caso è stato scelto perché è uno di quelli che il motore sbagliava
- * prima delle correzioni: mentre aspettava l'impatto restava sordo al tiro
- * successivo, e con il parlato sopra il motore si agganciava a una frase e non
- * sentiva più la corda.
+ * **Perché questo.** È il caso che smascherava la scelta dell'impatto a
+ * ampiezza: a 0,58 s dalla corda parte una parola forte 0,081 contro i 0,009
+ * del battifreccia, e il motore la sceglieva — Δ 0,58 s, distanza 30 m invece
+ * di 70. Adesso l'impatto si sceglie fra i transienti **a banda larga** (un
+ * urto eccita anche l'acuto, una voce no), e questo tiro torna a 70 m.
  *
- * Il file è un WAV mono 16 bit a 48 kHz, esattamente quello che esce dal
- * telefono (a parte il rumore del convertitore): niente segnale sintetico.
+ * Il file è WAV mono 16 bit a 48 kHz, esattamente quello che esce dal telefono
+ * a parte il rumore del convertitore: niente segnale sintetico.
  */
 class RealRecordingTest {
 
@@ -30,9 +31,9 @@ class RealRecordingTest {
     val temp = TemporaryFolder()
 
     @Test
-    fun ilTiroVeroConIlParlatoSopraTornaASettantaMetri() {
-        val file = temp.newFile("tiro_160_68.wav")
-        javaClass.getResourceAsStream("/audio/tiro_160_68.wav")!!.use { input ->
+    fun ilTiroVeroConLaVoceSopraTornaASettantaMetri() {
+        val file = temp.newFile("tiro_141_65.wav")
+        javaClass.getResourceAsStream("/audio/tiro_141_65.wav")!!.use { input ->
             file.outputStream().use { output -> input.copyTo(output) }
         }
 
@@ -42,14 +43,19 @@ class RealRecordingTest {
         val tiro = tiri.single()
         assertEquals(
             "lo scocco deve cadere dove l'ha visto chi ha misurato a mano",
-            2.675,
+            1.654,
             tiro.releaseS,
             0.060
         )
         val tempo = requireNotNull(tiro.deltaS) {
             "il battifreccia è dentro la finestra: il delta deve esserci"
         }
-        assertEquals("scocco -> impatto", 1.441, tempo.toDouble(), 0.020)
+        assertEquals(
+            "scocco -> impatto: è qui che la voce vinceva sull'impatto",
+            1.442,
+            tempo.toDouble(),
+            0.020
+        )
 
         val distanza = requireNotNull(
             BallisticCalculator.distance(tempo, ShotAudioProbe.MODELLO, airTempC = 20f)

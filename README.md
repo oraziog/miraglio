@@ -423,8 +423,14 @@ La tabella che stampa confronta ogni scocco misurato dal motore con i quaranta
 riferimenti misurati a mano su una registrazione di dodici minuti (40 tiri a
 ~70 m, con la voce del conduttore sopra), con l'errore in millisecondi, il Δ
 misurato e la distanza che ne ricava il modello balistico. Sullo stesso file,
-in modalità continua: 36 scocchi su 40 entro 120 ms, errore mediano +8 ms
-(scarto tipo 7 ms), e i tiri con l'impatto pulito danno 69–71 m.
+in modalità continua: **36 scocchi su 40** entro 120 ms (tolleranza dettata dai
+riferimenti letti a mano, dalla latenza del decoder MP3 e dall'inviluppo
+STA/LTA), errore mediano **+8 ms** con scarto tipo 7 ms, e **30 tiri su 36** con
+la distanza fra **68,5 e 70,7 m** (media 70,8 m; i quattro non agganciati sono
+3, 20, 22, 34).
+
+Gli altri sei hanno l'impatto preso su una consonante esplosiva — che è anch'essa
+un urto, quindi a banda larga — oppure su un transiente vicino di 40–115 ms.
 
 ---
 
