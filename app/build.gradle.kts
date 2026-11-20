@@ -218,7 +218,17 @@ dependencies {
     testImplementation(libs.robolectric)
     testImplementation(libs.roborazzi)
     testImplementation(libs.roborazzi.compose)
-    // L'Activity che `createComposeRule` apre per disegnare il contenuto: la
-    // dichiara il manifest di debug, non quello dell'app.
+    // L'Activity che `createComposeRule` apre per disegnare il contenuto del
+    // test: `androidx.activity.ComponentActivity` senza interfaccia. La classe
+    // c'e' gia' (arriva da activity-compose), quello che manca senza questa
+    // dipendenza e' la sua dichiarazione nel manifest unito.
+    //
+    // Va in TUTTE le varianti, non solo in debug: `./gradlew test` esegue anche
+    // `testReleaseUnitTest`, e gli screenshot test girano li' come in debug —
+    // senza la dichiarazione, Robolectric non trova l'Activity e tutti i test
+    // Compose della release falliscono. Escluderli dalla release sarebbe
+    // spegnere la verifica proprio dove si controlla che il codice pubblicato
+    // si disegni uguale.
     debugImplementation(libs.compose.ui.test.manifest)
+    releaseImplementation(libs.compose.ui.test.manifest)
 }
