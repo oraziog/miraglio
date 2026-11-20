@@ -5,6 +5,11 @@
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission android:name="android.permission.VIBRATE" />
 
+    <!-- Telemetro acustico: il microfono serve a datare scocco e impatto. L'app
+         chiede il permesso solo quando si preme "Distanza via Audio" e resta
+         utilizzabile per tutto il resto senza. -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+
     <!-- CPU sveglia durante la misura GPS (fase TRACKING): camminando con il
          telefono in mano lo schermo si spegne e Android mette la CPU in doze,
          perdendo i fix quando servono di piu'. Wake lock PARZIALE (non tiene
@@ -26,6 +31,7 @@
     <uses-feature android:name="android.hardware.camera.any" android:required="true" />
     <uses-feature android:name="android.hardware.sensor.accelerometer" android:required="true" />
     <uses-feature android:name="android.hardware.location.gps" android:required="false" />
+    <uses-feature android:name="android.hardware.microphone" android:required="false" />
 
     <!-- localeConfig: da Android 13 in poi espone Miraglio fra le app la cui
          lingua si puo' scegliere a parte (Impostazioni di sistema -> App ->

@@ -1,0 +1,95 @@
+package com.miraglio.domain.audio
+
+/**
+ * I due rami del filtro: acuto (scocco e rilascio) e grave (battifreccia).
+ *
+ * Stanno in un enum perché gli eventi dei due rami finiscono nella stessa
+ * sequenza, e chi la legge deve poterli distinguere senza guardare
+ * l'ampiezza: a 70 m l'impatto è più debole del rilascio, ma non sempre, e
+ * affidarsi all'ampiezza per capire che cosa si è sentito sarebbe un
+ * indovinello.
+ */
+enum class ShotBranch { HIGH_BAND, LOW_BAND }
+
+/** Un transiente con l'etichetta del ramo che l'ha trovato. */
+data class AcousticEvent(
+    val branch: ShotBranch,
+    val startIndex: Long,
+    val peakIndex: Long,
+    val endIndex: Long,
+    val peakAmplitude: Float
+)
+
+/**
+ * La pipeline DSP del telemetro: da campioni grezzi a eventi con indice.
+ *
+ * Non conosce il tempo dell'orologio e non decide niente sul tiro: riceve
+ * campioni, restituisce eventi e mantiene un contatore cumulativo
+ * ([sampleIndex]). Tutto ciò che riguarda *quando* è successo un evento è un
+ * numero di campioni, mai `System.nanoTime()`: è la sola cosa che rende la
+ * differenza fra due eventi indipendente dai ritardi dei buffer e dalla
+ * latenza con cui `AudioRecord` consegna i dati.
+ */
+class AcousticShotAnalyzer(
+    val sampleRateHz: Int = 48000,
+    config: ShotTimingConfig = ShotTimingConfig(sampleRateHz = sampleRateHz)
+) {
+
+    private val highFilter = Biquad.bandPass(sampleRateHz.toDouble(), 1500.0, 8000.0)
+    private val lowFilter = Biquad.bandPass(sampleRateHz.toDouble(), 120.0, 900.0)
+
+    private val highDetector = TransientDetector(
+        sampleRateHz = sampleRateHz,
+        triggerRatio = config.triggerRatio.toDouble(),
+        detriggerRatio = config.detriggerRatio.toDouble()
+    )
+    private val lowDetector = TransientDetector(
+        sampleRateHz = sampleRateHz,
+        triggerRatio = config.triggerRatio.toDouble(),
+        detriggerRatio = config.detriggerRatio.toDouble()
+    )
+
+    /** Campioni consumati dall'ultimo [reset]: l'orologio del telemetro. */
+    var sampleIndex: Long = 0L
+        private set
+
+    fun reset() {
+        highFilter.reset()
+        lowFilter.reset()
+        highDetector.reset()
+        lowDetector.reset()
+        sampleIndex = 0L
+    }
+
+    /**
+     * Consuma un blocco di campioni e restituisce gli eventi chiusi dentro il
+     * blocco, in ordine di fine. Vuoto quasi sempre: un blocco da 20 ms
+     * contiene un evento solo nei momenti che contano.
+     */
+    fun processBlock(samples: FloatArray, length: Int = samples.size): List<AcousticEvent> {
+        val highEvents = mutableListOf<TransientEvent>()
+        val lowEvents = mutableListOf<TransientEvent>()
+
+        for (i in 0 until length) {
+            val sample = samples[i].toDouble()
+            highDetector.process(highFilter.process(sample), sampleIndex, highEvents)
+            lowDetector.process(lowFilter.process(sample), sampleIndex, lowEvents)
+            sampleIndex++
+        }
+
+        if (highEvents.isEmpty() && lowEvents.isEmpty()) return emptyList()
+
+        return buildList {
+            highEvents.forEach { add(it.toAcoustic(ShotBranch.HIGH_BAND)) }
+            lowEvents.forEach { add(it.toAcoustic(ShotBranch.LOW_BAND)) }
+        }.sortedBy { it.endIndex }
+    }
+
+    private fun TransientEvent.toAcoustic(branch: ShotBranch) = AcousticEvent(
+        branch = branch,
+        startIndex = startIndex,
+        peakIndex = peakIndex,
+        endIndex = endIndex,
+        peakAmplitude = peakAmplitude.toFloat()
+    )
+}

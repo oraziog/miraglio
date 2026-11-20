@@ -499,6 +499,9 @@ adb install -r app/build/outputs/apk/release/app-release.apk
 - `CAMERA` — anteprima e misura
 - `ACCESS_FINE_LOCATION` / `ACCESS_COARSE_LOCATION` — posizione dello scatto, bersaglio stimato e verifica distanza
 - `VIBRATE` — feedback aptici
+- `RECORD_AUDIO` — **solo** per il telemetro acustico: il microfono serve a
+datare scocco e impatto. Il permesso si chiede quando si preme "Distanza via
+Audio", non all'avvio, e l'app funziona identica senza
 - `INTERNET` — solo per chiedere a GitHub se c'è una versione nuova e scaricare l'APK; l'app per il resto funziona offline
 - `REQUEST_INSTALL_PACKAGES` — per affidare l'APK scaricato all'installatore di sistema: l'app non installa niente da sola, chiede sempre conferma ad Android. Da Android 8 in poi l'utente deve anche autorizzare *Installa app sconosciute* per Miraglio (l'app apre la schermata giusta). **Nota:** è un permesso che Google Play concede solo ad app la cui funzione principale è gestire pacchetti, quindi un'app che si aggiorna da GitHub difficilmente passerebbe la revisione sul Play Store: la distribuzione qui è via GitHub Releases.
 
@@ -506,6 +509,12 @@ adb install -r app/build/outputs/apk/release/app-release.apk
 
 ## Roadmap
 
+- [ ] Telemetro acustico (in corso): distanza dal tempo di volo misurato col
+  microfono. Motore DSP, stabilità del telefono, profili arco e modello
+  balistico sono implementati e coperti da test JVM (`domain/audio`,
+  `domain/sensor`, `data/profile`, `domain/ballistics`); manca la schermata di
+  misura e la calibrazione guidata. Specifica in
+  [`ARCHERY_AUDIO_RANGEFINDER_SPEC.md`](ARCHERY_AUDIO_RANGEFINDER_SPEC.md)
 - [ ] Test automatici (unit/UI) sui calcoli di distanza e condivisione
 - [ ] Validazione sul campo della calibrazione contro distanze note
 - [ ] Quantizzazione del modello ONNX (APK più leggera, inferenza più rapida)
