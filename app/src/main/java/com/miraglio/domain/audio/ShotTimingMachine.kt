@@ -83,7 +83,18 @@ data class ShotTimingConfig(
      * confronto è grossolano e serve a scartare un secondo rilascio scambiato
      * per impatto, non a misurare. È uno dei punti da validare sul campo.
      */
-    val requireWeakerImpact: Boolean = true
+    val requireWeakerImpact: Boolean = true,
+
+    /**
+     * L'intervallo di Δ (scocco→impatto) fisicamente possibile per questo arco,
+     * quando lo si conosce dal modello calibrato.
+     *
+     * Serve all'ultimo filtro della scelta dell'impatto: un candidato la cui Δ
+     * implichi una distanza fuori dal campo di tiro non può essere il
+     * battifreccia, per quanto somigli a un urto. `null` (nessuna calibrazione)
+     * lascia il comportamento precedente.
+     */
+    val plausibleTotalTimeS: ClosedFloatingPointRange<Float>? = null
 )
 
 /**
@@ -109,6 +120,7 @@ class ShotTimingMachine(
     private val releaseEndSamples = msToSamples(config.releaseWindowEndMs)
     private val slackSamples = msToSamples(config.resolutionSlackMs)
     private val broadbandSamples = msToSamples(BROADBAND_TOLERANCE_MS)
+
     private val impactStartSamples = (config.impactWindowStartS * samplesPerSecond).toLong()
     private val impactEndSamples = (config.impactWindowEndS * samplesPerSecond).toLong()
 
@@ -303,7 +315,13 @@ class ShotTimingMachine(
 
         val start = releaseEvent.peakIndex + impactStartSamples
         val end = releaseEvent.peakIndex + impactEndSamples
-        val best = scegliImpatto(lowEvents.filter { it.peakIndex in start..end })
+        // La plausibilità si misura dal riferimento vero del cronometro, non
+        // dal picco grezzo: con un clicker dichiarato i due non coincidono.
+        val releaseIndex = releaseReference(releaseEvent)
+        val best = scegliImpatto(
+            lowEvents.filter { it.peakIndex in start..end },
+            releaseIndex = releaseIndex
+        )
 
         if (best == null) {
             _state.value = _state.value.copy(stage = ShotStage.DONE_NO_IMPACT)
@@ -314,8 +332,6 @@ class ShotTimingMachine(
             return
         }
 
-        // Da dove parte il cronometro: vedi [releaseReference].
-        val releaseIndex = releaseReference(releaseEvent)
         val totalTimeS = (best.peakIndex - releaseIndex) / samplesPerSecond
 
         _state.value = ShotTimingState(
@@ -350,7 +366,10 @@ class ShotTimingMachine(
      * un acuto coincidente; se nessuno ce l'ha (o non ce n'è nessuno) resta la
      * scelta di prima, il più forte.
      */
-    private fun scegliImpatto(candidati: List<AcousticEvent>): AcousticEvent? {
+    private fun scegliImpatto(
+        candidati: List<AcousticEvent>,
+        releaseIndex: Long
+    ): AcousticEvent? {
         if (candidati.isEmpty()) return null
         val conAcuto = candidati.mapNotNull { grave ->
             val acuto = highEvents
@@ -358,9 +377,30 @@ class ShotTimingMachine(
                 .maxByOrNull { it.peakAmplitude }
             acuto?.let { grave to it }
         }
-        if (conAcuto.isNotEmpty()) {
-            return conAcuto.maxByOrNull { (_, acuto) -> acuto.peakAmplitude }!!.first
+        val banda = config.plausibleTotalTimeS
+        fun plausibile(evento: AcousticEvent): Boolean {
+            if (banda == null) return true
+            val delta = (evento.peakIndex - releaseIndex) / samplesPerSecond
+            return delta in banda
         }
+
+        // 1. banda larga **e** fisicamente possibile: è il caso buono.
+        conAcuto
+            .filter { plausibile(it.first) }
+            .maxByOrNull { (_, acuto) -> acuto.peakAmplitude }
+            ?.let { return it.first }
+
+        // 2. Nessun urto plausibile: si ripiega su un grave plausibile, anche
+        //    senza acuto coincidente.
+        candidati
+            .filter { plausibile(it) }
+            .maxByOrNull { it.peakAmplitude }
+            ?.let { return it }
+
+        // 3. Nessun candidato entra nella banda (modello sbagliato o bersaglio
+        //    fuori dal campo di tiro): meglio un impatto a banda larga che
+        //    niente, e poi il comportamento di sempre.
+        conAcuto.maxByOrNull { (_, acuto) -> acuto.peakAmplitude }?.let { return it.first }
         return candidati.maxByOrNull { it.peakAmplitude }
     }
 

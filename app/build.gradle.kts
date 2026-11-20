@@ -270,7 +270,8 @@ tasks.register<JavaExec>("analyzeShotAudio") {
                 providers.gradleProperty("wav").orNull ?: "",
                 providers.gradleProperty("modo").orNull ?: "tiro",
                 providers.gradleProperty("useClicker").orNull ?: "true",
-                providers.gradleProperty("offsetMs").orNull ?: "0"
+                providers.gradleProperty("offsetMs").orNull ?: "0",
+                providers.gradleProperty("plausibile").orNull ?: "1.0,2.0"
             )
         }
     )

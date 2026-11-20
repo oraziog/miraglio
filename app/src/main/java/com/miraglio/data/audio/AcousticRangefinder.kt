@@ -6,6 +6,7 @@ import androidx.annotation.RequiresPermission
 import com.miraglio.domain.audio.AcousticShotAnalyzer
 import com.miraglio.domain.audio.ShotStage
 import com.miraglio.domain.audio.ShotTimingConfig
+import com.miraglio.domain.ballistics.BallisticCalculator
 import com.miraglio.domain.audio.ShotTimingMachine
 import com.miraglio.domain.audio.ShotTimingState
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -61,13 +62,20 @@ class AcousticRangefinder @Inject constructor(
         stability: StateFlow<Boolean>,
         sampleRateHz: Int = AudioCaptureSource.DEFAULT_SAMPLE_RATE,
         sessionTimeoutS: Double = DEFAULT_SESSION_TIMEOUT_S,
+        plausibleTotalTimeS: ClosedFloatingPointRange<Float>? =
+            BallisticCalculator.PLAUSIBLE_TOTAL_TIME_S,
         onState: (ShotTimingState) -> Unit = {},
         onLevel: (Float) -> Unit = {}
     ): ShotTimingState = withContext(Dispatchers.Default) {
 
         val source = AudioCaptureSource(context, sampleRateHz)
         val analyzer = AcousticShotAnalyzer(sampleRateHz)
-        val machine = ShotTimingMachine(ShotTimingConfig(sampleRateHz = sampleRateHz))
+        val machine = ShotTimingMachine(
+            ShotTimingConfig(
+                sampleRateHz = sampleRateHz,
+                plausibleTotalTimeS = plausibleTotalTimeS
+            )
+        )
 
         machine.startListening(useClicker, releaseOffsetMs)
         onState(machine.state.value)

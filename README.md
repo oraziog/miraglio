@@ -425,12 +425,25 @@ riferimenti misurati a mano su una registrazione di dodici minuti (40 tiri a
 misurato e la distanza che ne ricava il modello balistico. Sullo stesso file,
 in modalità continua: **36 scocchi su 40** entro 120 ms (tolleranza dettata dai
 riferimenti letti a mano, dalla latenza del decoder MP3 e dall'inviluppo
-STA/LTA), errore mediano **+8 ms** con scarto tipo 7 ms, e **30 tiri su 36** con
-la distanza fra **68,5 e 70,7 m** (media 70,8 m; i quattro non agganciati sono
+STA/LTA), errore mediano **+8 ms** con scarto tipo 7 ms, e **33 tiri su 36** con
+la distanza fra **65 e 75 m** (media 69,8 m; i quattro non agganciati sono
 3, 20, 22, 34).
 
-Gli altri sei hanno l'impatto preso su una consonante esplosiva — che è anch'essa
-un urto, quindi a banda larga — oppure su un transiente vicino di 40–115 ms.
+I tre residui, ognuno con la sua ragione letta sul segnale:
+
+- **18**: una sillaba a 0,65 s dalla corda, a banda larga come un urto ma a 33 m
+  di distanza equivalente. Il veto di plausibilità la scarta, e il tiro torna a
+  69,7 m.
+- **21**: il battifreccia torna da 70 m quasi senza energia sotto 1,5 kHz
+  (0,006 contro 0,056 in alto), quindi il rilevatore grave non lo vede; vince
+  un'esplosiva del parlato.
+- **26**: un transiente debole 130 ms prima tiene il rilevatore in trigger e
+  l'impatto, venti volte più forte, cade dentro la stessa finestra.
+
+Fra quel che è stato provato e misurato, senza effetto o peggio: selezione per
+rapporto STA/LTA, per durata del transiente, con la soglia del ramo grave
+abbassata, con la previsione del tiro precedente, e una soglia relativa
+sull'acuto coincidente (31 tiri su 36 invece di 33).
 
 ---
 

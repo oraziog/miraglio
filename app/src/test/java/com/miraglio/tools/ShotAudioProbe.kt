@@ -93,10 +93,31 @@ object ShotAudioProbe {
         val tiroConcluso: Boolean
     )
 
+    /** La banda di Δ che la produzione usa: vedi [BallisticCalculator.PLAUSIBLE_TOTAL_TIME_S]. */
+    val PLAUSIBILE_PRODOTTO: ClosedFloatingPointRange<Float> =
+        BallisticCalculator.PLAUSIBLE_TOTAL_TIME_S
+
+    private var plausibile: ClosedFloatingPointRange<Float>? = PLAUSIBILE_PRODOTTO
+
+    private fun leggiBanda(testo: String): ClosedFloatingPointRange<Float>? {
+        if (testo.isBlank() || testo.equals("nessuno", ignoreCase = true)) return null
+        val pezzi = testo.split(",").map { it.trim().toFloat() }
+        require(pezzi.size == 2) { "banda da due numeri: $testo" }
+        return pezzi[0]..pezzi[1]
+    }
+
+    private fun config(rate: Int) = ShotTimingConfig(
+        sampleRateHz = rate,
+        plausibleTotalTimeS = plausibile
+    )
+
     @JvmStatic
     fun main(args: Array<String>) {
         if (args.isEmpty()) {
-            error("uso: ShotAudioProbe <wav> [tiro|continuo] [useClicker=true] [offsetMs=0]")
+            error(
+                "uso: ShotAudioProbe <wav> [tiro|continuo] [useClicker=true] [offsetMs=0] " +
+                    "[plausibile=1.0,2.0|nessuno]"
+            )
         }
         val file = File(args[0])
         require(file.isFile) { "non esiste: ${file.absolutePath}" }
@@ -107,12 +128,14 @@ object ShotAudioProbe {
         }
         val useClicker = args.getOrNull(2)?.toBooleanStrictOrNull() ?: true
         val offsetMs = args.getOrNull(3)?.toFloatOrNull() ?: 0f
+        plausibile = args.getOrNull(4)?.let(::leggiBanda) ?: PLAUSIBILE_PRODOTTO
         val dump = System.getProperty("shotProbeDump")?.let(::File)
 
         println("file: ${file.name} (${file.length() / 1024} KiB)")
         println(
             "modo: ${modo.name.lowercase()}  clicker=$useClicker  offset=${offsetMs}ms  " +
-                "tolleranza=${(TOLLERANZA_S * 1000).toInt()}ms"
+                "tolleranza=${(TOLLERANZA_S * 1000).toInt()}ms  " +
+                "plausibile=${plausibile ?: "nessuno"}"
         )
 
         val iniziato = System.currentTimeMillis()
@@ -139,7 +162,7 @@ object ShotAudioProbe {
         val block = FloatArray(rate / 50)
         RIFERIMENTI.forEach { riferimento ->
             val analyzer = AcousticShotAnalyzer(rate)
-            val machine = ShotTimingMachine(ShotTimingConfig(sampleRateHz = rate))
+            val machine = ShotTimingMachine(config(rate))
             machine.startListening(useClicker, offsetMs)
             machine.onStability(true)
             machine.arm(0)
@@ -169,7 +192,7 @@ object ShotAudioProbe {
         val wav = WavInput(file)
         val rate = wav.sampleRate
         val analyzer = AcousticShotAnalyzer(rate)
-        val machine = ShotTimingMachine(ShotTimingConfig(sampleRateHz = rate))
+        val machine = ShotTimingMachine(config(rate))
 
         fun nuovaSessione() {
             machine.startListening(useClicker, offsetMs)

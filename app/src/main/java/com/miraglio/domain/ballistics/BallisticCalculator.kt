@@ -86,6 +86,21 @@ object BallisticCalculator {
      */
     const val DEFAULT_OUTLIER_THRESHOLD_M = 3f
 
+    /**
+     * L'intervallo di Δ (scocco→impatto) in cui un bersaglio può stare. Fuori di
+     * qui il transiente che il motore ha preso per impatto non è il
+     * battifreccia, per quanto somigli a un urto.
+     *
+     * Da dove viene: dal modello calibrato, non da un numero scelto a mano. A
+     * 20 °C, 1,0 s sono una cinquantina di metri e 2,0 s poco più di novanta —
+     * sotto è il poligono coperto, sopra è oltre il tiro utile dell'arco da
+     * caccia che questo telemetro serve. Sulle quaranta frecce vere a ~70 m i
+     * tiri buoni stanno fra 1,407 e 1,558 s (68,5–70,7 m): la banda li contiene
+     * tutti con due decimi di secondo di margine per lato, che è più del doppio
+     * dell'incertezza misurata sui riferimenti (±80 ms).
+     */
+    val PLAUSIBLE_TOTAL_TIME_S: ClosedFloatingPointRange<Float> = 1.0f..2.0f
+
     private const val MAX_ITERATIONS = 12
     private const val MIN_DISTANCE_STEP_M = 0.01f
 

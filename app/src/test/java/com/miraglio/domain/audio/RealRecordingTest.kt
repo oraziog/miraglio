@@ -3,6 +3,7 @@ package com.miraglio.domain.audio
 import com.miraglio.domain.ballistics.BallisticCalculator
 import com.miraglio.tools.ShotAudioProbe
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
@@ -55,6 +56,45 @@ class RealRecordingTest {
             1.442,
             tempo.toDouble(),
             0.020
+        )
+
+        val distanza = requireNotNull(
+            BallisticCalculator.distance(tempo, ShotAudioProbe.MODELLO, airTempC = 20f)
+        ) { "il modello deve produrre una distanza" }
+        assertEquals("distanza ricavata dal tiro", 70.0, distanza.toDouble(), 1.5)
+    }
+
+    /**
+     * Il tiro 18 della stessa registrazione (finestra 234,0–240,0 s), il caso in
+     * cui la scelta dell'impatto produceva la distanza più assurda: **33,6 m**.
+     *
+     * Il candidato colpevole è una sillaba a 0,652 s dalla corda, che è larga di
+     * banda quanto un urto; a 33 m però non c'è nessun bersaglio, e il tempo di
+     * volo lo dice. Il veto di plausibilità ([BallisticCalculator.
+     * PLAUSIBLE_TOTAL_TIME_S]) la scarta e l'impatto torna a 1,435 s, cioè 69,7 m.
+     */
+    @Test
+    fun ilTiroVeroConLaDistanzaAssurdaTornaASettantaMetri() {
+        val file = temp.newFile("tiro_235_95.wav")
+        javaClass.getResourceAsStream("/audio/tiro_235_95.wav")!!.use { input ->
+            file.outputStream().use { output -> input.copyTo(output) }
+        }
+
+        val tiri = ShotAudioProbe.analizzaContinuo(file, useClicker = true, offsetMs = 0f)
+
+        assertEquals("la finestra contiene un solo tiro", 1, tiri.size)
+        val tiro = tiri.single()
+        assertEquals("lo scocco", 1.963, tiro.releaseS, 0.060)
+        val tempo = requireNotNull(tiro.deltaS) { "il battifreccia deve esserci" }
+        assertEquals(
+            "scocco -> impatto: la sillaba a 0,65 s non deve vincere",
+            1.435,
+            tempo.toDouble(),
+            0.020
+        )
+        assertTrue(
+            "la misura deve stare dentro la banda fisicamente possibile",
+            tempo in BallisticCalculator.PLAUSIBLE_TOTAL_TIME_S
         )
 
         val distanza = requireNotNull(
