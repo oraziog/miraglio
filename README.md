@@ -299,7 +299,7 @@ docs/img/                                         # banner, infografica e icona 
 
 ---
 
-## Stato corrente (v1.0.8, versionCode 9)
+## Stato corrente (v1.0.9, versionCode 10)
 
 | Funzione | Stato |
 |----------|-------|
