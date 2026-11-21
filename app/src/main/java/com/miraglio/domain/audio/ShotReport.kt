@@ -5,7 +5,8 @@ import com.miraglio.domain.ballistics.BallisticCalculator
 
 /**
  * Quello che si può dire di un tiro misurato: il tempo, la distanza, la
- * distanza orizzontale, la velocità della freccia a quel bersaglio.
+ * distanza orizzontale, la velocità della freccia a quel bersaglio, e quanto
+ * il numero merita fiducia ([quality]).
  *
  * Sta fuori dalla ViewModel perché è la parte che sbaglia i conti: la
  * schermata non deve decidere niente di numerico, solo mostrare.
@@ -15,7 +16,11 @@ data class ShotReport(
     val distanceM: Float,
     val horizontalDistanceM: Float,
     val speedMs: Float?,
-    val pitchDeg: Float
+    val pitchDeg: Float,
+    /** Verde/giallo/rosso: quanto è solida la scelta dell'impatto. */
+    val quality: ShotQuality,
+    /** In ascolto il motore ha sentito il pattern click→corda. */
+    val clickerDetected: Boolean
 )
 
 object ShotReportBuilder {
@@ -26,12 +31,18 @@ object ShotReportBuilder {
      * [model] nullo significa meno di due distanze di calibrazione: in quel
      * caso la distanza non esiste e non si inventa (vedi
      * [BallisticCalculator.distance]).
+     *
+     * [evidence] e [fieldRangeM] non cambiano il numero: servono a dire
+     * quanta fiducia merita ([ShotQuality.evaluate]).
      */
     fun build(
         totalTimeS: Float,
         model: ArrowSpeedModel?,
         airTempC: Float,
-        pitchDeg: Float
+        pitchDeg: Float,
+        evidence: ImpactEvidence = ImpactEvidence.BROADBAND_IN_BAND,
+        fieldRangeM: ClosedFloatingPointRange<Float>? = null,
+        clickerDetected: Boolean = false
     ): ShotReport? {
         if (!totalTimeS.isFinite() || totalTimeS <= 0f) return null
         val distance = BallisticCalculator.distance(totalTimeS, model, airTempC) ?: return null
@@ -41,7 +52,9 @@ object ShotReportBuilder {
             distanceM = distance,
             horizontalDistanceM = BallisticCalculator.horizontalDistance(distance, pitchDeg),
             speedMs = speed,
-            pitchDeg = pitchDeg
+            pitchDeg = pitchDeg,
+            quality = ShotQuality.evaluate(distance, evidence, fieldRangeM),
+            clickerDetected = clickerDetected
         )
     }
 }

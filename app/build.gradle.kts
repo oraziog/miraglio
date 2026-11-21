@@ -274,7 +274,8 @@ tasks.register<JavaExec>("analyzeShotAudio") {
                 providers.gradleProperty("ref").orNull ?: "",
                 providers.gradleProperty("profilo").orNull ?: "",
                 providers.gradleProperty("dmin").orNull ?: "",
-                providers.gradleProperty("dmax").orNull ?: ""
+                providers.gradleProperty("dmax").orNull ?: "",
+                providers.gradleProperty("autoClicker").orNull ?: ""
             )
         }
     )

@@ -48,11 +48,16 @@ class ShotTimingTest {
         samples: FloatArray,
         useClicker: Boolean,
         releaseOffsetMs: Float = 0f,
-        banda: ClosedFloatingPointRange<Float>? = null
+        banda: ClosedFloatingPointRange<Float>? = null,
+        autoClicker: Boolean = false
     ): ShotTimingState {
         val analyzer = AcousticShotAnalyzer(sampleRate)
         val machine = ShotTimingMachine(
-            ShotTimingConfig(sampleRateHz = sampleRate, plausibleTotalTimeS = banda)
+            ShotTimingConfig(
+                sampleRateHz = sampleRate,
+                plausibleTotalTimeS = banda,
+                autoClicker = autoClicker
+            )
         )
 
         machine.startListening(useClicker, releaseOffsetMs)
@@ -100,6 +105,11 @@ class ShotTimingTest {
             "l'impatto deve arrivare dopo il rilascio",
             measurement.impactIndex > measurement.releaseIndex
         )
+        assertEquals(
+            "l'impatto sintetico è un urto pulito: lo prende il picco d'inviluppo",
+            ImpactEvidence.PEAK_IN_BAND,
+            measurement.evidence
+        )
     }
 
     /**
@@ -125,6 +135,77 @@ class ShotTimingTest {
         val measurement = state.measurement!!
         // Se avesse scelto il pre-click, Δt sarebbe 1,150 s.
         assertEquals(1.000, measurement.totalTimeS.toDouble(), 0.005)
+    }
+
+    /**
+     * Il clicker riconosciuto in ascolto: senza dichiararlo, il motore sente la
+     * coppia click→corda e cronometra dal picco della corda. Il riferimento è
+     * quello vero, non il click: il tiro vale 1,445 s.
+     */
+    @Test
+    fun ilClickerVieneRiconosciutoSenzaDichiararlo() {
+        val signal = SyntheticShot.signal(
+            sampleRateHz = sampleRate,
+            durationS = 3.6,
+            bursts = listOf(
+                SyntheticShot.Burst(atS = 0.700, freqHz = 4000.0, amplitude = 0.85f, lengthMs = 4.0),
+                SyntheticShot.Burst(atS = 0.850, freqHz = 4000.0, amplitude = 0.90f, lengthMs = 6.0),
+                SyntheticShot.Burst(atS = 2.295, freqHz = 300.0, amplitude = 0.45f, lengthMs = 25.0)
+            )
+        )
+
+        val state = run(throughWav(signal), useClicker = false, autoClicker = true)
+
+        assertEquals(ShotStage.DONE, state.stage)
+        val measurement = state.measurement!!
+        assertEquals(1.445, measurement.totalTimeS.toDouble(), 0.005)
+        assertTrue("il clicker va dichiarato come riconosciuto", measurement.clickerDetected)
+    }
+
+    /** Senza clicker l'automatico non inventa un secondo picco: il rilascio è il primo. */
+    @Test
+    fun senzaClickerIlPrimoPiccoRestaIlRilascio() {
+        val signal = SyntheticShot.signal(
+            sampleRateHz = sampleRate,
+            durationS = 3.2,
+            bursts = listOf(
+                SyntheticShot.Burst(atS = 0.700, freqHz = 4000.0, amplitude = 0.90f, lengthMs = 6.0),
+                SyntheticShot.Burst(atS = 1.700, freqHz = 300.0, amplitude = 0.45f, lengthMs = 25.0)
+            )
+        )
+
+        val state = run(throughWav(signal), useClicker = false, autoClicker = true)
+
+        assertEquals(ShotStage.DONE, state.stage)
+        assertEquals(1.000, state.measurement!!.totalTimeS.toDouble(), 0.005)
+        assertTrue("qui il clicker non c'è", !state.measurement!!.clickerDetected)
+    }
+
+    /**
+     * Il caso che la finestra fissa a 0,15 s perdeva: un bersaglio a 5 m
+     * restituisce il battifreccia in ~0,08 s. Con la banda fisica la ricerca si
+     * apre prima, e il tiro si misura invece di finire in `DONE_NO_IMPACT`.
+     */
+    @Test
+    fun aCinqueMetriLImpattoSiCercaPrimaDeiCentoCinquantaMillisecondi() {
+        val signal = SyntheticShot.signal(
+            sampleRateHz = sampleRate,
+            durationS = 3.2,
+            bursts = listOf(
+                SyntheticShot.Burst(atS = 0.700, freqHz = 4000.0, amplitude = 0.90f, lengthMs = 6.0),
+                SyntheticShot.Burst(atS = 0.780, freqHz = 300.0, amplitude = 0.45f, lengthMs = 25.0)
+            )
+        )
+
+        val state = run(
+            throughWav(signal),
+            useClicker = false,
+            banda = 0.05f..1.05f,
+            autoClicker = true
+        )
+
+        assertEquals(ShotStage.DONE, state.stage)
+        assertEquals(0.080, state.measurement!!.totalTimeS.toDouble(), 0.005)
     }
 
     /**

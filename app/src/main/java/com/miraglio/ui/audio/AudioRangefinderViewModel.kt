@@ -12,6 +12,7 @@ import com.miraglio.data.profile.BowProfile
 import com.miraglio.data.profile.BowProfileStore
 import com.miraglio.data.sensor.Inclinometer
 import com.miraglio.data.sensor.MotionMonitor
+import com.miraglio.data.settings.AppSettingsStore
 import com.miraglio.data.weather.TemperatureReading
 import com.miraglio.data.weather.TemperatureSource
 import com.miraglio.data.weather.WeatherCachePolicy
@@ -51,7 +52,8 @@ class AudioRangefinderViewModel @Inject constructor(
     private val rangefinder: AcousticRangefinder,
     private val motion: MotionMonitor,
     private val location: LocationTracker,
-    private val inclinometer: Inclinometer
+    private val inclinometer: Inclinometer,
+    private val settings: AppSettingsStore
 ) : ViewModel() {
 
     private val orientation = ShotOrientationManager(inclinometer.pitchAngleDegrees)
@@ -71,6 +73,8 @@ class AudioRangefinderViewModel @Inject constructor(
         val canMeasure: Boolean = false,
         /** Il microfono non si è aperto: non è un tiro mancato, è un guasto. */
         val captureFailed: Boolean = false,
+        /** Campo H&S 5–50 m: il tiro di campagna a distanza sconosciuta. */
+        val fieldMode: Boolean = false,
         val zoom: Float = WaveformBuffer.MIN_ZOOM,
         val waveform: List<Float> = emptyList()
     )
@@ -100,6 +104,11 @@ class AudioRangefinderViewModel @Inject constructor(
             // c'è un valore manuale si chiede la previsione di quel posto.
             location.currentLocation.collect { fix ->
                 if (fix != null && weather.manualCelsius() == null) refreshTemperature()
+            }
+        }
+        viewModelScope.launch {
+            settings.huntingFieldMode.collect { enabled ->
+                _state.value = _state.value.copy(fieldMode = enabled)
             }
         }
         refreshTemperature()
@@ -146,19 +155,28 @@ class AudioRangefinderViewModel @Inject constructor(
             // La finestra in cui un impatto è fisicamente possibile esce dal
             // profilo (modello calibrato + distanze di calibrazione), non da
             // una costante: a 18 m la costante 1,0–2,0 s non conteneva il tiro.
-            // `null` (profilo non calibrato) lascia il motore senza veto,
-            // come prima: meglio nessun veto che una finestra inventata.
+            // Nel tiro di campagna H&S si aggiunge il campo 5–50 m, perché il
+            // bersaglio è a distanza sconosciuta e può stare fuori dalle
+            // distanze su cui l'arco è stato calibrato. `null` (profilo non
+            // calibrato) lascia il motore senza veto, come prima: meglio
+            // nessun veto che una finestra inventata.
             val impactWindow = ImpactPlausibility.band(
                 model = _state.value.model,
                 distancesM = profile?.fitPoints?.map { it.distanceM }.orEmpty(),
-                airTempC = _state.value.temperature.celsius
+                airTempC = _state.value.temperature.celsius,
+                fieldRangeM = fieldRange()
             )
 
             var cancelled = false
             try {
                 val finalState = rangefinder.measure(
+                    // Se l'arciere non ha dichiarato il clicker, il motore lo
+                    // riconosce da solo ascoltando la coppia click→corda. Se
+                    // lo ha dichiarato si usa il percorso già validato, con il
+                    // suo offset: non c'è motivo di rimetterlo in discussione.
                     useClicker = profile?.useClicker == true,
                     releaseOffsetMs = profile?.releaseOffsetMs ?: 0f,
+                    autoClicker = profile?.useClicker != true,
                     plausibleTotalTimeS = impactWindow,
                     stability = motion.stable,
                     onState = { publishStage(it) },
@@ -195,11 +213,18 @@ class AudioRangefinderViewModel @Inject constructor(
                 totalTimeS = measurement.totalTimeS,
                 model = _state.value.model,
                 airTempC = _state.value.temperature.celsius,
-                pitchDeg = lockedPitch
+                pitchDeg = lockedPitch,
+                evidence = measurement.evidence,
+                fieldRangeM = fieldRange(),
+                clickerDetected = measurement.clickerDetected
             )
         }
         _state.value = _state.value.copy(stage = state.stage, report = report)
     }
+
+    /** Il campo dichiarato per questa misura, o `null` se si tira a distanza nota. */
+    private fun fieldRange(): ClosedFloatingPointRange<Float>? =
+        if (_state.value.fieldMode) ImpactPlausibility.FIELD_RANGE_M else null
 
     private fun onLevel(level: Float) {
         waveform.push(level)
@@ -232,6 +257,12 @@ class AudioRangefinderViewModel @Inject constructor(
     fun selectProfile(id: String) {
         if (_state.value.listening) return
         profileStore.setActive(id)
+    }
+
+    /** Campo H&S 5–50 m: vale per la misura, la calibrazione resta a distanza nota. */
+    fun setFieldMode(enabled: Boolean) {
+        if (_state.value.listening) return
+        settings.setHuntingFieldMode(enabled)
     }
 
     fun setClicker(enabled: Boolean) {

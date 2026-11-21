@@ -20,6 +20,22 @@ enum class ShotStage {
     DONE_NO_IMPACT
 }
 
+/**
+ * Da dove viene l'impatto scelto, in ordine di forza della prova fisica.
+ *
+ * Non è un dettaglio interno: è quello che permette di dire verde, giallo o
+ * rosso senza inventare una confidenza. `PEAK_IN_BAND` e `BROADBAND_IN_BAND`
+ * sono un urto (banda larga, o inviluppo delle due bande d'impatto);
+ * `LOW_IN_BAND` è solo un tonfo grave, che potrebbe essere una voce;
+ * `OUT_OF_BAND` è il ripiego fuori dalla finestra fisica.
+ */
+enum class ImpactEvidence {
+    PEAK_IN_BAND,
+    BROADBAND_IN_BAND,
+    LOW_IN_BAND,
+    OUT_OF_BAND
+}
+
 /** Il risultato di un tiro: quello che l'interfaccia mostra e la calibrazione salva. */
 data class ShotMeasurement(
     /** Tempo fra rilascio effettivo (offset compreso) e impatto. */
@@ -27,7 +43,11 @@ data class ShotMeasurement(
     val releaseIndex: Long,
     val impactIndex: Long,
     val releaseAmplitude: Float,
-    val impactAmplitude: Float
+    val impactAmplitude: Float,
+    /** Quanta prova fisica c'è dietro la scelta dell'impatto. */
+    val evidence: ImpactEvidence = ImpactEvidence.BROADBAND_IN_BAND,
+    /** In modalità automatica: il motore ha sentito un clicker. */
+    val clickerDetected: Boolean = false
 )
 
 data class ShotTimingState(
@@ -94,7 +114,25 @@ data class ShotTimingConfig(
      * battifreccia, per quanto somigli a un urto. `null` (nessuna calibrazione)
      * lascia il comportamento precedente.
      */
-    val plausibleTotalTimeS: ClosedFloatingPointRange<Float>? = null
+    val plausibleTotalTimeS: ClosedFloatingPointRange<Float>? = null,
+
+    /**
+     * Riconosce da solo se il tiro ha un clicker.
+     *
+     * Con un clicker dichiarato il motore sa già che il primo acuto è il
+     * click e il rilascio è il picco più forte nei 450 ms successivi. Senza,
+     * deve indovinare: un arco con il clicker produce **due** transienti
+     * acuti ravvicinati, uno senza ne produce uno solo. In automatico il
+     * motore non decide al primo picco, aspetta la fine della finestra e
+     * tiene aperte entrambe le ipotesi fino alla scelta dell'impatto (vedi
+     * [ShotTimingMachine.resolveImpactIfDue]): a 5 m l'impatto arriva prima
+     * che la finestra si chiuda e non si può scambiarlo per un click.
+     *
+     * In automatico `useClicker` e l'offset sono ignorati: il cronometro parte
+     * dal picco della corda che il motore ha sentito, che è il riferimento
+     * vero, non un click spostato a mano.
+     */
+    val autoClicker: Boolean = false
 )
 
 /**
@@ -136,7 +174,23 @@ class ShotTimingMachine(
     private val slackSamples = msToSamples(config.resolutionSlackMs)
     private val broadbandSamples = msToSamples(BROADBAND_TOLERANCE_MS)
 
-    private val impactStartSamples = (config.impactWindowStartS * samplesPerSecond).toLong()
+    /**
+     * Da dove si cerca l'impatto.
+     *
+     * Con una banda fisica la ricerca si apre prima dei 0,15 s della
+     * specifica: nel tiro di campagna un bersaglio a 5 m restituisce il
+     * battifreccia in ~0,06 s, e una finestra che parte dopo non lo vedrebbe
+     * mai. Il tetto resta `impactWindowStartS`, quindi a 70 m la ricerca parte
+     * ancora da 0,15 s come prima.
+     */
+    private val impactSearchStartS: Float = config.plausibleTotalTimeS
+        ?.let { banda ->
+            (banda.start - BAND_SEARCH_MARGIN_S)
+                .coerceIn(MIN_IMPACT_SEARCH_START_S, config.impactWindowStartS)
+        }
+        ?: config.impactWindowStartS
+
+    private val impactStartSamples = (impactSearchStartS * samplesPerSecond).toLong()
     private val impactEndSamples = (config.impactWindowEndS * samplesPerSecond).toLong()
 
     private val _state = MutableStateFlow(ShotTimingState(ShotStage.IDLE))
@@ -145,6 +199,12 @@ class ShotTimingMachine(
     private var clicker = false
     private var offsetSamples = 0L
     private var click: AcousticEvent? = null
+
+    /** In modalità automatica: il primo transiente acuto, click o corda che sia. */
+    private var firstHigh: AcousticEvent? = null
+
+    /** In modalità automatica: il clicker lo sta decidendo il motore. */
+    private var clickerAuto = false
     private var releaseCandidates = mutableListOf<AcousticEvent>()
     private var release: AcousticEvent? = null
     private var lowEvents = mutableListOf<AcousticEvent>()
@@ -160,9 +220,16 @@ class ShotTimingMachine(
      * Azzera tutto e comincia ad aspettare che il telefono sia fermo.
      */
     fun startListening(useClicker: Boolean, releaseOffsetMs: Float) {
-        clicker = useClicker
-        offsetSamples = (releaseOffsetMs * samplesPerSecond / 1000f).toLong()
+        clickerAuto = config.autoClicker
+        // In automatico non si sa ancora se il clicker c'è: si parte senza e
+        // si decide quando la finestra del rilascio si chiude. L'offset
+        // dichiarato non serve, perché il riferimento sarà il picco della
+        // corda che il motore ha sentito davvero.
+        clicker = if (clickerAuto) false else useClicker
+        offsetSamples =
+            if (clickerAuto) 0L else (releaseOffsetMs * samplesPerSecond / 1000f).toLong()
         click = null
+        firstHigh = null
         releaseCandidates = mutableListOf()
         release = null
         lowEvents = mutableListOf()
@@ -200,6 +267,19 @@ class ShotTimingMachine(
         if (event.branch == ShotBranch.HIGH_BAND) highEvents += event
         when (_state.value.stage) {
             ShotStage.ARMED -> when {
+                clickerAuto -> {
+                    // Il primo acuto può essere il click o la corda che parte:
+                    // qui non si decide. Finché la finestra dei 450 ms non si
+                    // chiude si raccolgono i candidati, mentre gravi e picchi
+                    // d'impatto si accumulano come sempre — a 5 m l'impatto
+                    // arriva prima che la finestra si chiuda.
+                    if (event.branch == ShotBranch.HIGH_BAND) {
+                        onAutoHigh(event)
+                    } else {
+                        lowEvents += event
+                    }
+                }
+
                 event.branch == ShotBranch.HIGH_BAND && !clicker -> {
                     release = event
                     _state.value = _state.value.copy(
@@ -250,10 +330,19 @@ class ShotTimingMachine(
 
         when (_state.value.stage) {
             ShotStage.ARMED -> {
-                val clickEvent = click
-                if (clicker && clickEvent != null) {
-                    val deadline = clickEvent.peakIndex + releaseEndSamples + slackSamples
-                    if (highestIndex >= deadline) resolveClickerRelease()
+                if (clickerAuto) {
+                    val primo = firstHigh
+                    if (primo != null &&
+                        highestIndex >= primo.peakIndex + releaseEndSamples + slackSamples
+                    ) {
+                        resolveAutoRelease()
+                    }
+                } else {
+                    val clickEvent = click
+                    if (clicker && clickEvent != null) {
+                        val deadline = clickEvent.peakIndex + releaseEndSamples + slackSamples
+                        if (highestIndex >= deadline) resolveClickerRelease()
+                    }
                 }
             }
 
@@ -315,6 +404,16 @@ class ShotTimingMachine(
 
         lowEvents = mutableListOf()
         release = null
+        if (clickerAuto) {
+            // Nuovo colpo: si ricomincia dal suo primo acuto, senza sapere
+            // ancora se è un click o la corda.
+            clicker = false
+            click = null
+            firstHigh = event
+            releaseCandidates = mutableListOf()
+            _state.value = ShotTimingState(ShotStage.ARMED, clickerUsed = false)
+            return
+        }
         if (clicker) {
             // Il nuovo colpo è il click: la corda deve ancora partire, e la sua
             // finestra si apre da qui.
@@ -336,26 +435,43 @@ class ShotTimingMachine(
         val deadline = releaseEvent.peakIndex + impactEndSamples + slackSamples
         if (highestIndex < deadline) return
 
-        val start = releaseEvent.peakIndex + impactStartSamples
-        val end = releaseEvent.peakIndex + impactEndSamples
         // La plausibilità si misura dal riferimento vero del cronometro, non
         // dal picco grezzo: con un clicker dichiarato i due non coincidono.
-        val releaseIndex = releaseReference(releaseEvent)
-        val best = scegliImpatto(
-            lowEvents.filter { it.peakIndex in start..end },
-            peakEvents.filter { it.peakIndex in start..end },
-            releaseIndex = releaseIndex
-        )
+        var releaseScelto = releaseEvent
+        var scelta = scegliImpatto(releaseEvent, releaseReference(releaseEvent))
 
+        // In automatico la seconda ipotesi resta aperta fino all'ultimo. A 5 m
+        // l'impatto arriva ~60 ms dopo la corda, cioè **dentro** la finestra
+        // dei 450 ms in cui si cerca il rilascio: se lo si fosse preso per il
+        // rilascio, l'impatto successivo non esisterebbe e il tiro andrebbe
+        // perso. Qui, se l'ipotesi "click + corda" non produce nessun impatto
+        // dentro la banda, si riprova con il primo picco come rilascio vero.
+        if (clickerAuto && clicker) {
+            val diretto = firstHigh
+            val senzaProva = scelta == null || scelta.evidence == ImpactEvidence.OUT_OF_BAND
+            if (diretto != null && senzaProva) {
+                val alternativa = scegliImpatto(diretto, diretto.peakIndex)
+                if (alternativa != null && alternativa.evidence != ImpactEvidence.OUT_OF_BAND) {
+                    clicker = false
+                    click = null
+                    release = diretto
+                    releaseScelto = diretto
+                    scelta = alternativa
+                }
+            }
+        }
+
+        val best = scelta?.event
         if (best == null) {
             _state.value = _state.value.copy(stage = ShotStage.DONE_NO_IMPACT)
             return
         }
-        if (config.requireWeakerImpact && best.peakAmplitude > releaseEvent.peakAmplitude) {
+        if (config.requireWeakerImpact && best.peakAmplitude > releaseScelto.peakAmplitude) {
             _state.value = _state.value.copy(stage = ShotStage.DONE_NO_IMPACT)
             return
         }
 
+        val releaseIndex = releaseReference(releaseScelto)
         val totalTimeS = (best.peakIndex - releaseIndex) / samplesPerSecond
 
         _state.value = ShotTimingState(
@@ -364,11 +480,86 @@ class ShotTimingMachine(
                 totalTimeS = totalTimeS,
                 releaseIndex = releaseIndex,
                 impactIndex = best.peakIndex,
-                releaseAmplitude = releaseEvent.peakAmplitude,
-                impactAmplitude = best.peakAmplitude
+                releaseAmplitude = releaseScelto.peakAmplitude,
+                impactAmplitude = best.peakAmplitude,
+                evidence = scelta.evidence,
+                clickerDetected = clicker
             ),
             clickerUsed = clicker,
             releaseIndex = releaseIndex
+        )
+    }
+
+    /**
+     * In automatico: raccoglie i transienti acuti dopo il primo senza decidere
+     * se sono click o corda.
+     *
+     * Il pattern del clicker è "click, poi la corda che parte 50–450 ms
+     * dopo". Il pattern senza clicker è un transiente solo. Un transiente
+     * almeno [ANCORA_CLICK_FACTOR] volte più forte del primo, però, è la firma
+     * già misurata di una frase scambiata per click: il primo era rumore, e la
+     * finestra riparte dal nuovo.
+     */
+    private fun onAutoHigh(event: AcousticEvent) {
+        val primo = firstHigh
+        if (primo == null) {
+            firstHigh = event
+            return
+        }
+        // La riancoratura vale anche **dentro** la finestra: sui tiri 3, 31 e 34
+        // della registrazione il primo acuto è una frase (0,003–0,006) e il
+        // click arriva 350–470 ms dopo a 0,25–0,40. Se lo si tenesse come
+        // candidato, il più forte della finestra sarebbe il click e non la
+        // corda: 150 ms di troppo, cioè sette metri. Quattro volte tanto è la
+        // soglia già misurata per distinguere una frase da un click.
+        if (event.peakAmplitude >= primo.peakAmplitude * ANCORA_CLICK_FACTOR) {
+            firstHigh = event
+            releaseCandidates = mutableListOf()
+            return
+        }
+        val nellaFinestra = event.peakIndex >= primo.peakIndex + releaseStartSamples &&
+            event.peakIndex <= primo.peakIndex + releaseEndSamples
+        if (nellaFinestra) releaseCandidates += event
+    }
+
+    /**
+     * Chiusa la finestra dei 450 ms, sceglie la corda che parte.
+     *
+     * Se dopo il primo acuto c'è un secondo picco almeno
+     * [AUTO_RELEASE_MIN_RATIO] del primo, il clicker c'è e il rilascio è il più
+     * forte di quelli nella finestra: è la stessa scelta del clicker
+     * dichiarato, solo fatta senza saperlo in anticipo. Se non c'è, il primo
+     * acuto era la corda che parte.
+     *
+     * Qui non si guarda ancora l'impatto: a 50 m non è arrivato. La conferma
+     * arriva alla fine, in [resolveImpactIfDue], dove l'ipotesi sbagliata
+     * viene scartata se non produce un impatto dentro la banda.
+     */
+    private fun resolveAutoRelease() {
+        val primo = firstHigh ?: return
+        val corda = releaseCandidates
+            .filter { it.peakAmplitude >= primo.peakAmplitude * AUTO_RELEASE_MIN_RATIO }
+            .maxByOrNull { it.peakAmplitude }
+
+        if (corda == null) {
+            clicker = false
+            click = null
+            release = primo
+            _state.value = _state.value.copy(
+                stage = ShotStage.RELEASE_DETECTED,
+                releaseIndex = primo.peakIndex,
+                clickerUsed = false
+            )
+            return
+        }
+
+        clicker = true
+        click = primo
+        release = corda
+        _state.value = _state.value.copy(
+            stage = ShotStage.RELEASE_DETECTED,
+            releaseIndex = corda.peakIndex,
+            clickerUsed = true
         )
     }
 
@@ -397,11 +588,31 @@ class ShotTimingMachine(
      * a 18 m sono l'unico candidato che esiste. Il file a 70 m resta a 39/40 con
      * 188 rilevamenti e +8 ms mediani, quindi la precedenza non gli costa nulla.
      */
-    private fun scegliImpatto(
+    /** L'impatto scelto e la prova che lo sostiene (vedi [ImpactEvidence]). */
+    private data class ImpactChoice(val event: AcousticEvent, val evidence: ImpactEvidence)
+
+    /**
+     * I candidati d'impatto della finestra di [rilascio], scelti come prima.
+     *
+     * La finestra di ricerca si misura dal picco grezzo del rilascio; la
+     * plausibilità, dentro [scegliFra], dal riferimento vero del cronometro
+     * (con un clicker dichiarato i due non coincidono).
+     */
+    private fun scegliImpatto(rilascio: AcousticEvent, releaseIndex: Long): ImpactChoice? {
+        val start = rilascio.peakIndex + impactStartSamples
+        val end = rilascio.peakIndex + impactEndSamples
+        return scegliFra(
+            candidati = lowEvents.filter { it.peakIndex in start..end },
+            picchi = peakEvents.filter { it.peakIndex in start..end },
+            releaseIndex = releaseIndex
+        )
+    }
+
+    private fun scegliFra(
         candidati: List<AcousticEvent>,
         picchi: List<AcousticEvent>,
         releaseIndex: Long
-    ): AcousticEvent? {
+    ): ImpactChoice? {
         if (candidati.isEmpty() && picchi.isEmpty()) return null
         val conAcuto = candidati.mapNotNull { grave ->
             val acuto = highEvents
@@ -428,27 +639,29 @@ class ShotTimingMachine(
         picchi
             .filter { plausibile(it) }
             .maxByOrNull { it.peakAmplitude }
-            ?.let { return it }
+            ?.let { return ImpactChoice(it, ImpactEvidence.PEAK_IN_BAND) }
 
         // 2. Nessun picco: banda larga **e** fisicamente possibile, il caso
         //    buono dei transienti triggerati (è quello che regge i 70 m).
         conAcuto
             .filter { plausibile(it.first) }
             .maxByOrNull { (_, acuto) -> acuto.peakAmplitude }
-            ?.let { return it.first }
+            ?.let { return ImpactChoice(it.first, ImpactEvidence.BROADBAND_IN_BAND) }
 
         // 3. Nessun picco: si ripiega su un grave plausibile, anche senza
         //    acuto coincidente.
         candidati
             .filter { plausibile(it) }
             .maxByOrNull { it.peakAmplitude }
-            ?.let { return it }
+            ?.let { return ImpactChoice(it, ImpactEvidence.LOW_IN_BAND) }
 
         // 4. Nessun candidato entra nella banda (bersaglio fuori dal campo di
         //    tiro): meglio un impatto a banda larga che niente, poi il
         //    comportamento di sempre.
-        conAcuto.maxByOrNull { (_, acuto) -> acuto.peakAmplitude }?.let { return it.first }
+        conAcuto.maxByOrNull { (_, acuto) -> acuto.peakAmplitude }
+            ?.let { return ImpactChoice(it.first, ImpactEvidence.OUT_OF_BAND) }
         return (candidati + picchi).maxByOrNull { it.peakAmplitude }
+            ?.let { ImpactChoice(it, ImpactEvidence.OUT_OF_BAND) }
     }
 
     /**
@@ -489,6 +702,7 @@ class ShotTimingMachine(
         click = null
         releaseCandidates = mutableListOf()
         release = null
+        firstHigh = null
         lowEvents = mutableListOf()
         peakEvents = mutableListOf()
         highEvents = mutableListOf()
@@ -528,5 +742,32 @@ class ShotTimingMachine(
          * prima o dopo.
          */
         const val BROADBAND_TOLERANCE_MS = 20f
+
+        /**
+         * Quanto prima del minimo fisico si apre la ricerca dell'impatto.
+         * Venti millisecondi coprono lo scarto fra il tempo di volo calcolato
+         * dal modello e il ritardo del picco d'inviluppo; di più farebbe
+         * rientrare l'eco del rilascio.
+         */
+        const val BAND_SEARCH_MARGIN_S = 0.02f
+
+        /**
+         * Prima di questo istante dal rilascio un impatto non è separabile
+         * dalla coda del rilascio stesso: è il pavimento della finestra.
+         */
+        const val MIN_IMPACT_SEARCH_START_S = 0.02f
+
+        /**
+         * Quanto deve valere il secondo picco acuto per essere la corda che
+         * parte e non un rumore.
+         *
+         * Un quinto del primo picco: il click è un rumore meccanico secco e la
+         * corda che parte è comunque un evento forte, mentre un fruscio o un
+         * colpo di tosse dopo il rilascio stanno molto sotto. La conferma vera
+         * non è però l'ampiezza: è che l'ipotesi produca un impatto dentro la
+         * banda fisica, altrimenti si torna al primo picco (vedi
+         * [ShotTimingMachine.resolveImpactIfDue]).
+         */
+        const val AUTO_RELEASE_MIN_RATIO = 0.2f
     }
 }

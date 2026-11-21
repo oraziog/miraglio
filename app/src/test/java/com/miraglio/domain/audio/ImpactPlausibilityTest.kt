@@ -45,6 +45,63 @@ class ImpactPlausibilityTest {
         )
     }
 
+    /**
+     * Il tiro di campagna H&S: il bersaglio è a distanza sconosciuta fra 5 e
+     * 50 m, e chi ha calibrato l'arco a 15–25 m deve poter misurare anche un
+     * 45 m. La banda si allarga fino al campo dichiarato.
+     */
+    @Test
+    fun ilCampoDiCacciaApreLaBandaFinoACinquantaMetri() {
+        val modello = ArrowSpeedModel(muzzleSpeedMs = 65f, decayPerM = 0.002f)
+        val banda = requireNotNull(
+            ImpactPlausibility.band(
+                modello,
+                listOf(15f, 25f),
+                airTempC = 20f,
+                fieldRangeM = ImpactPlausibility.FIELD_RANGE_M
+            )
+        )
+        assertEquals(
+            BallisticCalculator.flightTime(5f, modello, 20f),
+            banda.start,
+            1e-4f
+        )
+        assertEquals(
+            BallisticCalculator.flightTime(50f, modello, 20f),
+            banda.endInclusive,
+            1e-4f
+        )
+        assertTrue(
+            "un 45 m deve stare nella finestra",
+            banda.contains(BallisticCalculator.flightTime(45f, modello, 20f))
+        )
+    }
+
+    /** Un profilo calibrato più lontano (65–75 m) allarga la banda, non la stringe. */
+    @Test
+    fun ilCampoDiCacciaNonStringeUnProfiloCalibratoPiuLontano() {
+        val modello = ArrowSpeedModel(muzzleSpeedMs = 65f, decayPerM = 0.002f)
+        val banda = requireNotNull(
+            ImpactPlausibility.band(
+                modello,
+                listOf(65f, 75f),
+                airTempC = 20f,
+                fieldRangeM = ImpactPlausibility.FIELD_RANGE_M
+            )
+        )
+        assertEquals(
+            BallisticCalculator.flightTime(5f, modello, 20f),
+            banda.start,
+            1e-4f
+        )
+        assertEquals(
+            BallisticCalculator.flightTime(75f, modello, 20f),
+            banda.endInclusive,
+            1e-4f
+        )
+        assertTrue("il tiro a 70 m resta dentro", banda.contains(1.445f))
+    }
+
     @Test
     fun senzaModelloNonCEBanda() {
         assertNull(ImpactPlausibility.band(null, listOf(20f, 70f), 20f))

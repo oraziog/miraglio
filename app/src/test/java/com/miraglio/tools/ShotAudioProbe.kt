@@ -121,15 +121,23 @@ object ShotAudioProbe {
         "70m" to Profilo("70m", 65f, 0.002f, 65f, 75f)
     )
 
-    private fun config(rate: Int, banda: ClosedFloatingPointRange<Float>?) = ShotTimingConfig(
+    private fun config(
+        rate: Int,
+        banda: ClosedFloatingPointRange<Float>?,
+        autoClicker: Boolean = false
+    ) = ShotTimingConfig(
         sampleRateHz = rate,
-        plausibleTotalTimeS = banda
+        plausibleTotalTimeS = banda,
+        autoClicker = autoClicker
     )
 
     @JvmStatic
     fun main(args: Array<String>) {
         if (args.isEmpty()) {
-            error("uso: ShotAudioProbe <wav> [tiro|continuo] [useClicker=true] [offsetMs=0] [riferimenti.csv]")
+            error(
+                "uso: ShotAudioProbe <wav> [tiro|continuo] [useClicker=true] [offsetMs=0] " +
+                    "[riferimenti.csv] [profilo] [dmin] [dmax] [autoClicker=false]"
+            )
         }
         val file = File(args[0])
         require(file.isFile) { "non esiste: ${file.absolutePath}" }
@@ -147,6 +155,7 @@ object ShotAudioProbe {
         }
         val dmin = args.getOrNull(6)?.toFloatOrNull() ?: profilo?.dminM
         val dmax = args.getOrNull(7)?.toFloatOrNull() ?: profilo?.dmaxM
+        val autoClicker = args.getOrNull(8)?.toBooleanStrictOrNull() ?: false
         // Senza profilo non c'è una banda: il veto non si applica, invece di
         // ricadere sulla vecchia costante 1,0–2,0 s che descrive solo i 70 m.
         val banda = if (profilo != null && dmin != null && dmax != null) {
@@ -158,7 +167,7 @@ object ShotAudioProbe {
         println("file: ${file.name} (${file.length() / 1024} KiB)")
         println(
             "modo: ${modo.name.lowercase()}  clicker=$useClicker  offset=${offsetMs}ms  " +
-                "tolleranza=${(TOLLERANZA_S * 1000).toInt()}ms"
+                "auto=$autoClicker  tolleranza=${(TOLLERANZA_S * 1000).toInt()}ms"
         )
         if (banda == null) {
             println("plausibilita': nessuna (manca un profilo calibrato: nessun veto)")
@@ -171,8 +180,8 @@ object ShotAudioProbe {
 
         val iniziato = System.currentTimeMillis()
         val tiri = when (modo) {
-            Modo.TIRO -> analizzaPerTiro(file, useClicker, offsetMs, riferimenti, banda)
-            Modo.CONTINUO -> analizzaContinuo(file, useClicker, offsetMs, banda)
+            Modo.TIRO -> analizzaPerTiro(file, useClicker, offsetMs, riferimenti, banda, autoClicker)
+            Modo.CONTINUO -> analizzaContinuo(file, useClicker, offsetMs, banda, autoClicker)
         }
         println("riferimenti: ${riferimenti.size}")
         println("analisi: ${tiri.size} rilevamenti in ${(System.currentTimeMillis() - iniziato) / 1000} s")
@@ -209,7 +218,8 @@ object ShotAudioProbe {
         useClicker: Boolean,
         offsetMs: Float,
         riferimenti: DoubleArray = RIFERIMENTI,
-        banda: ClosedFloatingPointRange<Float>?
+        banda: ClosedFloatingPointRange<Float>?,
+        autoClicker: Boolean = false
     ): List<Tiro> {
         val wav = WavInput(file)
         val rate = wav.sampleRate
@@ -217,7 +227,7 @@ object ShotAudioProbe {
         val block = FloatArray(rate / 50)
         riferimenti.forEach { riferimento ->
             val analyzer = AcousticShotAnalyzer(rate)
-            val machine = ShotTimingMachine(config(rate, banda))
+            val machine = ShotTimingMachine(config(rate, banda, autoClicker))
             machine.startListening(useClicker, offsetMs)
             machine.onStability(true)
             machine.arm(0)
@@ -247,12 +257,13 @@ object ShotAudioProbe {
         file: File,
         useClicker: Boolean,
         offsetMs: Float,
-        banda: ClosedFloatingPointRange<Float>?
+        banda: ClosedFloatingPointRange<Float>?,
+        autoClicker: Boolean = false
     ): List<Tiro> {
         val wav = WavInput(file)
         val rate = wav.sampleRate
         val analyzer = AcousticShotAnalyzer(rate)
-        val machine = ShotTimingMachine(config(rate, banda))
+        val machine = ShotTimingMachine(config(rate, banda, autoClicker))
 
         fun nuovaSessione() {
             machine.startListening(useClicker, offsetMs)

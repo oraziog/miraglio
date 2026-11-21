@@ -383,7 +383,15 @@
     <string name="audio_profile_create">Create</string>
     <string name="audio_clicker">Clicker</string>
     <string name="audio_clicker_on">Clicker on: the click starts the measurement, the release is the strongest peak in the next 450 ms.</string>
-    <string name="audio_clicker_off">No clicker: the first sharp sound is the release.</string>
+    <string name="audio_clicker_off">No clicker, or clicker to be recognised: when measuring, the engine works out on its own whether there is one.</string>
+    <string name="audio_clicker_yes">recognised while listening</string>
+    <string name="audio_clicker_no">no click heard</string>
+    <string name="audio_field_mode">H&amp;S field 5–50 m</string>
+    <string name="audio_field_mode_explain">Unknown distance: the impact can come back from a target between 5 and 50 m, even outside the calibration distances. Leave it off for known-distance shooting (for example 70 m).</string>
+    <string name="audio_quality_ok">Green: broadband impact inside the physical window.</string>
+    <string name="audio_quality_no_broadband">Yellow: low impact without high-band confirmation, it could have been noise.</string>
+    <string name="audio_quality_out_of_field">Yellow: distance outside the 5–50 m field, the model is extrapolating.</string>
+    <string name="audio_quality_out_of_band">Red: no impact inside the physical window, this is a fallback.</string>
     <string name="audio_offset_label">Release offset (ms)</string>
     <string name="audio_temperature_title">Air temperature</string>
     <string name="audio_temperature_manual_field">Temperature (°C)</string>

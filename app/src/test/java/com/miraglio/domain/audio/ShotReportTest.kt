@@ -52,6 +52,54 @@ class ShotReportTest {
         assertNull(ShotReportBuilder.build(1.2f, null, 20f, 0f))
     }
 
+    /**
+     * Verde, giallo, rosso: il colore non cambia il numero, dice su cosa si
+     * regge la scelta dell'impatto.
+     */
+    @Test
+    fun ilColoreSegueLaProvaDellImpatto() {
+        val campo = 5f..50f
+        val time = BallisticCalculator.flightTime(30f, model, 20f)
+
+        val verde = ShotReportBuilder.build(
+            time, model, 20f, 0f,
+            evidence = ImpactEvidence.BROADBAND_IN_BAND,
+            fieldRangeM = campo
+        )!!
+        assertEquals(ShotConfidence.HIGH, verde.quality.confidence)
+        assertEquals(ShotConfidenceReason.OK, verde.quality.reason)
+
+        val giallo = ShotReportBuilder.build(
+            time, model, 20f, 0f,
+            evidence = ImpactEvidence.LOW_IN_BAND,
+            fieldRangeM = campo
+        )!!
+        assertEquals(ShotConfidence.MEDIUM, giallo.quality.confidence)
+        assertEquals(ShotConfidenceReason.NO_BROADBAND_PROOF, giallo.quality.reason)
+
+        val rosso = ShotReportBuilder.build(
+            time, model, 20f, 0f,
+            evidence = ImpactEvidence.OUT_OF_BAND,
+            fieldRangeM = campo
+        )!!
+        assertEquals(ShotConfidence.LOW, rosso.quality.confidence)
+        assertEquals(ShotConfidenceReason.IMPACT_OUT_OF_BAND, rosso.quality.reason)
+    }
+
+    /** Un numero fuori dal campo dichiarato resta giallo: il modello estrapola. */
+    @Test
+    fun unaDistanzaFuoriDalCampoEDichiarataGialla() {
+        val time = BallisticCalculator.flightTime(55f, model, 20f)
+        val report = ShotReportBuilder.build(
+            time, model, 20f, 0f,
+            evidence = ImpactEvidence.BROADBAND_IN_BAND,
+            fieldRangeM = 5f..50f
+        )!!
+
+        assertEquals(ShotConfidence.MEDIUM, report.quality.confidence)
+        assertEquals(ShotConfidenceReason.OUT_OF_FIELD_RANGE, report.quality.reason)
+    }
+
     @Test
     fun senzaTempoNonCEUnReport() {
         assertNull(ShotReportBuilder.build(0f, model, 20f, 0f))

@@ -367,7 +367,15 @@
     <string name="audio_profile_create">Crea</string>
     <string name="audio_clicker">Clicker</string>
     <string name="audio_clicker_on">Clicker attivo: il click dà il via, il rilascio è il picco più forte nei 450 ms successivi.</string>
-    <string name="audio_clicker_off">Senza clicker: il primo suono secco è il rilascio.</string>
+    <string name="audio_clicker_off">Senza clicker, o con il clicker da riconoscere: nella misura il motore capisce da solo se c\'è.</string>
+    <string name="audio_clicker_yes">riconosciuto in ascolto</string>
+    <string name="audio_clicker_no">nessun click sentito</string>
+    <string name="audio_field_mode">Campo H&amp;S 5–50 m</string>
+    <string name="audio_field_mode_explain">Distanza sconosciuta: l\'impatto può tornare da un bersaglio fra 5 e 50 m, anche fuori dalle distanze di calibrazione. Lascialo spento per il tiro a distanza nota (per esempio 70 m).</string>
+    <string name="audio_quality_ok">Verde: impatto a banda larga dentro la finestra fisica.</string>
+    <string name="audio_quality_no_broadband">Giallo: impatto grave senza conferma acuta, poteva essere rumore.</string>
+    <string name="audio_quality_out_of_field">Giallo: distanza fuori dal campo 5–50 m, il modello sta estrapolando.</string>
+    <string name="audio_quality_out_of_band">Rosso: nessun impatto nella finestra fisica, la misura è un ripiego.</string>
     <string name="audio_offset_label">Offset rilascio (ms)</string>
     <string name="audio_temperature_title">Temperatura dell\'aria</string>
     <string name="audio_temperature_manual_field">Temperatura (°C)</string>

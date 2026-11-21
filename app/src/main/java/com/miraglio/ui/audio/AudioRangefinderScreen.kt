@@ -42,6 +42,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -52,9 +54,18 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import com.miraglio.R
 import com.miraglio.data.profile.BowProfile
 import com.miraglio.data.weather.TemperatureReading
+import com.miraglio.domain.audio.ShotConfidence
+import com.miraglio.domain.audio.ShotConfidenceReason
 import com.miraglio.domain.audio.ShotReport
 import com.miraglio.domain.audio.WaveformBuffer
 import com.miraglio.ui.i18n.LocalDisplayFormat
+import com.miraglio.ui.theme.GreenDark
+import com.miraglio.ui.theme.GreenLight
+import com.miraglio.ui.theme.LocalOutdoorMode
+import com.miraglio.ui.theme.Orange80
+import com.miraglio.ui.theme.OutdoorAmber
+import com.miraglio.ui.theme.OutdoorGreen
+import com.miraglio.ui.theme.OutdoorRed
 
 /**
  * La schermata del telemetro acustico: profilo arco, temperatura, misura.
@@ -169,11 +180,13 @@ fun AudioRangefinderScreen(
                 hasProfile = state.profile != null,
                 canMeasure = state.canMeasure,
                 hasMicrophone = hasMicrophone,
+                fieldMode = state.fieldMode,
                 waveform = state.waveform,
                 zoom = state.zoom,
                 onStart = viewModel::start,
                 onStop = viewModel::stop,
-                onZoom = viewModel::setZoom
+                onZoom = viewModel::setZoom,
+                onFieldMode = viewModel::setFieldMode
             )
 
             TextButton(onClick = onNavigateToCalibration) {
@@ -289,8 +302,14 @@ private fun TemperatureCard(
     }
 }
 
+/**
+ * La scheda Misura. `internal` e non `private` perché lo screenshot test la
+ * disegna da sola: una schermata intera non si può costruire sul JVM (apre
+ * microfono e ViewModel Hilt), ma la scheda vera serve a vedere i colori e il
+ * testo che l'utente legge davvero.
+ */
 @Composable
-private fun MeasurementCard(
+internal fun MeasurementCard(
     stageText: String,
     listening: Boolean,
     captureFailed: Boolean,
@@ -298,11 +317,13 @@ private fun MeasurementCard(
     hasProfile: Boolean,
     canMeasure: Boolean,
     hasMicrophone: Boolean,
+    fieldMode: Boolean,
     waveform: List<Float>,
     zoom: Float,
     onStart: () -> Unit,
     onStop: () -> Unit,
-    onZoom: (Float) -> Unit
+    onZoom: (Float) -> Unit,
+    onFieldMode: (Boolean) -> Unit
 ) {
     val format = LocalDisplayFormat.current
 
@@ -338,6 +359,34 @@ private fun MeasurementCard(
             )
         }
 
+        // Il tiro di campagna H&S: distanza sconosciuta, bersagli fra 5 e 50 m.
+        // Acceso allarga la finestra fisica dell'impatto fino a comprenderli;
+        // spento resta la finestra stretta del profilo calibrato.
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Switch(
+                checked = fieldMode,
+                onCheckedChange = onFieldMode,
+                enabled = !listening
+            )
+            // Il peso lascia al testo la larghezza che resta accanto allo
+            // switch: senza, una spiegazione lunga (o i testi ingranditi in
+            // outdoor) allargherebbe la Row oltre il bordo della card.
+            Column(
+                modifier = Modifier
+                    .padding(start = 8.dp)
+                    .weight(1f)
+            ) {
+                Text(
+                    text = stringResource(R.string.audio_field_mode),
+                    style = MaterialTheme.typography.bodyMedium
+                )
+                Text(
+                    text = stringResource(R.string.audio_field_mode_explain),
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
+        }
+
         if (report != null) {
             ResultRow(
                 label = stringResource(R.string.audio_result_time),
@@ -345,7 +394,13 @@ private fun MeasurementCard(
             )
             ResultRow(
                 label = stringResource(R.string.audio_result_distance),
-                value = format.distance(report.distanceM)
+                value = format.distance(report.distanceM),
+                valueColor = confidenceColor(report.quality.confidence)
+            )
+            Text(
+                text = stringResource(confidenceReasonLabel(report.quality.reason)),
+                color = confidenceColor(report.quality.confidence),
+                style = MaterialTheme.typography.bodySmall
             )
             ResultRow(
                 label = stringResource(R.string.audio_result_horizontal),
@@ -360,6 +415,13 @@ private fun MeasurementCard(
             ResultRow(
                 label = stringResource(R.string.audio_result_pitch),
                 value = stringResource(R.string.audio_degrees, format.number(report.pitchDeg, 0))
+            )
+            ResultRow(
+                label = stringResource(R.string.audio_clicker),
+                value = stringResource(
+                    if (report.clickerDetected) R.string.audio_clicker_yes
+                    else R.string.audio_clicker_no
+                )
             )
         } else if (hasProfile && !canMeasure) {
             Text(
@@ -391,18 +453,77 @@ private fun MeasurementCard(
 }
 
 @Composable
-private fun ResultRow(label: String, value: String) {
+private fun ResultRow(label: String, value: String, valueColor: Color? = null) {
     Row(
         modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.Top
     ) {
-        Text(text = label, style = MaterialTheme.typography.bodyMedium)
+        // L'etichetta prende il peso e quindi va a capo invece di spingere il
+        // numero fuori dalla card: in inglese "Distance (line of sight)" è il
+        // caso più largo della stessa riga.
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodyMedium,
+            modifier = Modifier.weight(1f)
+        )
         Text(
             text = value,
             style = MaterialTheme.typography.bodyMedium,
-            fontWeight = FontWeight.Bold
+            fontWeight = FontWeight.Bold,
+            color = valueColor ?: MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.padding(start = 8.dp)
         )
     }
+}
+
+/**
+ * Verde, giallo e rosso leggibili sui tre fondi dell'app.
+ *
+ * I colori non possono essere fissi: il verde scuro che regge sulla card chiara
+ * sparisce su un fondo scuro. Si sceglie per luminanza della superficie del
+ * tema (chiaro/scuro, qualunque sia l'impostazione di sistema) e per la
+ * modalità outdoor, che ha già i suoi toni ad alto contrasto sul nero.
+ */
+@Composable
+private fun confidenceColor(confidence: ShotConfidence): Color {
+    val scuro = MaterialTheme.colorScheme.surface.luminance() < 0.5f
+    return when (confidence) {
+        ShotConfidence.HIGH -> when {
+            LocalOutdoorMode.current -> OutdoorGreen
+            scuro -> GreenLight
+            else -> GreenDark
+        }
+
+        ShotConfidence.MEDIUM -> when {
+            LocalOutdoorMode.current -> OutdoorAmber
+            scuro -> Orange80
+            else -> AmberOnLight
+        }
+
+        ShotConfidence.LOW -> when {
+            LocalOutdoorMode.current -> OutdoorRed
+            scuro -> RedOnDark
+            else -> RedOnLight
+        }
+    }
+}
+
+/** Arancione scuro abbastanza da reggere il testo piccolo sulla card chiara. */
+private val AmberOnLight = Color(0xFF8A4B00)
+
+/** Rosso Material su fondo chiaro: ~5,4:1 di contrasto. */
+private val RedOnLight = Color(0xFFB3261E)
+
+/** Rosso chiaro per il tema scuro: il rosso scuro sul nero non si legge. */
+private val RedOnDark = Color(0xFFFF8A80)
+
+@Composable
+private fun confidenceReasonLabel(reason: ShotConfidenceReason): Int = when (reason) {
+    ShotConfidenceReason.OK -> R.string.audio_quality_ok
+    ShotConfidenceReason.NO_BROADBAND_PROOF -> R.string.audio_quality_no_broadband
+    ShotConfidenceReason.OUT_OF_FIELD_RANGE -> R.string.audio_quality_out_of_field
+    ShotConfidenceReason.IMPACT_OUT_OF_BAND -> R.string.audio_quality_out_of_band
 }
 
 /**

@@ -56,6 +56,12 @@ class AcousticRangefinder @Inject constructor(
      * `null` significa "nessun veto", così nessun chiamante può ricadere su
      * una finestra fissa che descrive solo i 70 m.
      *
+     * [autoClicker] fa riconoscere al motore, ascoltando, se il tiro ha un
+     * clicker: non serve dichiararlo prima. Con l'automatico [useClicker] e
+     * [releaseOffsetMs] sono ignorati, perché il cronometro parte dal picco
+     * della corda che il motore ha sentito — non da un click spostato di un
+     * offset dichiarato.
+     *
      * [onState] riceve ogni cambio di stato utile all'interfaccia — è pensato
      * per una callback veloce, non per lavoro pesante. [onLevel] riceve il
      * picco di ogni blocco letto, per il grafico della forma d'onda.
@@ -66,6 +72,7 @@ class AcousticRangefinder @Inject constructor(
         releaseOffsetMs: Float,
         stability: StateFlow<Boolean>,
         plausibleTotalTimeS: ClosedFloatingPointRange<Float>?,
+        autoClicker: Boolean = false,
         sampleRateHz: Int = AudioCaptureSource.DEFAULT_SAMPLE_RATE,
         sessionTimeoutS: Double = DEFAULT_SESSION_TIMEOUT_S,
         onState: (ShotTimingState) -> Unit = {},
@@ -77,7 +84,8 @@ class AcousticRangefinder @Inject constructor(
         val machine = ShotTimingMachine(
             ShotTimingConfig(
                 sampleRateHz = sampleRateHz,
-                plausibleTotalTimeS = plausibleTotalTimeS
+                plausibleTotalTimeS = plausibleTotalTimeS,
+                autoClicker = autoClicker
             )
         )
 
