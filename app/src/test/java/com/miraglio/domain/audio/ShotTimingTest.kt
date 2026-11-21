@@ -427,6 +427,37 @@ class ShotTimingTest {
         assertEquals(ShotStage.ARMED, machine.state.value.stage)
     }
 
+    /**
+     * Un fruscio **sotto il pavimento** non apre un tiro, per quanto il suo
+     * rapporto STA/LTA sia alto.
+     *
+     * È il caso della sessione a 18 m: il fondo è a −93 dBFS, quindi basta un
+     * rumore da 0,008 perché il trigger scatti. Prima del pavimento il motore
+     * apriva 72 sessioni su sette minuti di sala vuota e ne chiudeva 37 con una
+     * misura. Qui il rilascio sintetico vale 0,03 (sotto i 0,05 del pavimento)
+     * e l'evento grave 1,000 s dopo non deve produrre nessuna misura.
+     */
+    @Test
+    fun ilFruscioSottoIlPavimentoNonApreUnTiro() {
+        val signal = SyntheticShot.signal(
+            sampleRateHz = sampleRate,
+            durationS = 2.4,
+            bursts = listOf(
+                SyntheticShot.Burst(atS = 0.700, freqHz = 4000.0, amplitude = 0.030f, lengthMs = 6.0),
+                SyntheticShot.Burst(atS = 1.700, freqHz = 300.0, amplitude = 0.020f, lengthMs = 25.0)
+            )
+        )
+
+        val state = run(throughWav(signal), useClicker = false)
+
+        assertEquals(
+            "nessuno scocco sopra il pavimento: il motore resta in ascolto",
+            ShotStage.ARMED,
+            state.stage
+        )
+        assertEquals(null, state.measurement)
+    }
+
     /** Il segnale passa per il WAV senza perdere i picchi che contano. */
     @Test
     fun ilWavConservaAmpiezzaELunghezza() {

@@ -5,6 +5,23 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
 /**
+ * Il pavimento di ampiezza della corda che parte: −26 dBFS.
+ *
+ * Sta fuori dalla classe perché lo usa il valore di default di
+ * [ShotTimingConfig.minReleaseAmplitude], che è dichiarato prima della
+ * macchina.
+ *
+ * Perché quel numero, misurato e non scelto a occhio: sulla sessione a 18 m il
+ * transiente più forte che **non** è un tiro (una sillaba a 236,6 s) vale
+ * 0,047, i dieci rilasci veri 0,154–0,248; sui tiri a 70 m il rilascio più
+ * debole vale 0,065 e il click del clicker 0,25–0,40. Il pavimento sta sopra
+ * il primo e sotto il secondo, con il margine più stretto (30%) sul lato dei
+ * rilasci veri. Se una registrazione più lontana produce corde a 0,02, va
+ * abbassato — ed è il primo parametro da guardare se i tiri spariscono.
+ */
+private const val MIN_RELEASE_AMPLITUDE = 0.05f
+
+/**
  * Gli stati del telemetro. Sono quelli della specifica, nell'ordine in cui si
  * attraversano: si parte da [IDLE], si aspetta che il telefono sia fermo
  * ([SETTLING]) e poi si aspetta il tiro ([READY] → [ARMED]).
@@ -88,6 +105,29 @@ data class ShotTimingConfig(
     val impactWindowStartS: Float = 0.15f,
     /** Fino a quando ha senso aspettarlo: oltre sono 100 m e passa. */
     val impactWindowEndS: Float = 2.20f,
+
+    /**
+     * Il livello sotto il quale un transiente acuto non è una corda che parte.
+     *
+     * Il rapporto STA/LTA da solo non basta su una registrazione **quieta**: il
+     * fondo a 18 m sta a −93 dBFS nella banda 1,5–8 kHz, quindi basta un
+     * fruscio perché il rapporto superi 3 e il motore apra una sessione. Sul
+     * file a 18 m succedeva 72 volte in sette minuti: 37 misure invece di 10,
+     * tutte con scocco sotto 0,05 e impatto sotto 0,034, mentre i dieci tiri
+     * veri hanno scocco 0,154–0,248 e impatto 0,061–0,114.
+     *
+     * Non è una soglia di rumore del file (quella cambierebbe con il guadagno
+     * del telefono e la distanza): è un pavimento **fisico** sulla corda che
+     * parte, che vicino al microfono è sempre un evento forte. Misurato: i
+     * rilasci veri valgono 0,154–0,248 a 18 m e 0,065–0,391 a 70 m, mentre il
+     * transiente più forte che non è un tiro (una sillaba a 236,6 s del file a
+     * 18 m) vale 0,047. Il pavimento predefinito sta in mezzo.
+     *
+     * Vale solo per **aprire** un tiro: gli stessi eventi continuano a essere
+     * usati per la conferma a banda larga dell'impatto, che a 70 m vive proprio
+     * sui transienti acuti deboli.
+     */
+    val minReleaseAmplitude: Float = MIN_RELEASE_AMPLITUDE,
     /**
      * Margine oltre la fine della finestra prima di decidere. Un evento è noto
      * solo quando è finito, quindi decide chi aspetta un pelo in più: la
@@ -274,13 +314,19 @@ class ShotTimingMachine(
                     // d'impatto si accumulano come sempre — a 5 m l'impatto
                     // arriva prima che la finestra si chiuda.
                     if (event.branch == ShotBranch.HIGH_BAND) {
-                        onAutoHigh(event)
+                        if (sopraIlPavimento(event)) onAutoHigh(event)
                     } else {
                         lowEvents += event
                     }
                 }
 
                 event.branch == ShotBranch.HIGH_BAND && !clicker -> {
+                    if (!sopraIlPavimento(event)) {
+                        // Fruscio o voce: l'evento resta in [highEvents] per la
+                        // conferma a banda larga, ma non apre un tiro.
+                        pruneEvents()
+                        return
+                    }
                     release = event
                     _state.value = _state.value.copy(
                         stage = ShotStage.RELEASE_DETECTED,
@@ -293,6 +339,13 @@ class ShotTimingMachine(
                     // dopo sono candidati al rilascio. Ma il primo picco può
                     // essere una frase: il click vero, quando arriva, è di
                     // un'altra classe di ampiezza (vedi [ANCORA_CLICK_FACTOR]).
+                    if (!sopraIlPavimento(event)) {
+                        // Un fruscio non apre la finestra del clicker: senza
+                        // questo, su una registrazione quieta il motore si
+                        // mette ad aspettare un rilascio che non c'è.
+                        pruneEvents()
+                        return
+                    }
                     val clickEvent = click
                     when {
                         clickEvent == null -> click = event
@@ -383,6 +436,15 @@ class ShotTimingMachine(
             )
         }
     }
+
+    /**
+     * Vero se l'evento acuto è abbastanza forte per essere la corda che parte.
+     *
+     * Il pavimento è [ShotTimingConfig.minReleaseAmplitude]; a zero il
+     * comportamento è quello di prima (nessun pavimento).
+     */
+    private fun sopraIlPavimento(event: AcousticEvent): Boolean =
+        event.peakAmplitude >= config.minReleaseAmplitude
 
     /**
      * Mentre si aspetta l'impatto si resta sordi allo scocco successivo per
@@ -636,6 +698,20 @@ class ShotTimingMachine(
         //    in cui un rumore secco precede l'impatto di 55–78 ms (barebow
         //    54/60, compound 32/36). Non c'è modo di separarli senza toccare lo
         //    scocco o stringere la banda: resta il più forte.
+        //    Di preferenza un **attacco** e non un'onda della coda riverberante
+        //    del rilascio: con il microfono a 3 m dalla linea il rilascio non si
+        //    spegne netto e l'onda a 0,15 s vale quanto l'impatto vero a 0,35 s,
+        //    quindi due tiri su dieci misuravano 0,157 e 0,180 s (vedi
+        //    [BroadbandPeakDetector]).
+        picchi
+            .filter { it.isAttack && plausibile(it) }
+            .maxByOrNull { it.peakAmplitude }
+            ?.let { return ImpactChoice(it, ImpactEvidence.PEAK_IN_BAND) }
+
+        // 1b. Nessun attacco nella banda: si torna al picco più forte, come
+        //     prima. Serve ai casi in cui l'impatto è sepolto nel rumore e non
+        //     "salta" (il compound a 60 m: salita 1,9–3,4×, sotto il criterio):
+        //     meglio la misura di ieri che nessuna misura.
         picchi
             .filter { plausibile(it) }
             .maxByOrNull { it.peakAmplitude }

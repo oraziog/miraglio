@@ -33,6 +33,19 @@ import kotlin.math.sqrt
  *    sono la stessa vibrazione, e tenere il primo (spesso il più debole)
  *    faceva perdere il colpo vero che arrivava 20–30 ms dopo.
  *
+ * Ogni picco porta anche se è un **attacco** o un'onda della coda
+ * (`isAttack`): è un attacco se sale almeno di [riseFactor] volte rispetto al
+ * minimo degli ultimi [riseWindowMs]. Misurato il 21/11/2026 sulle due
+ * sessioni a 18 m (microfono a 1 m e a 3 m dalla linea): i dieci impatti veri
+ * salgono 5,9–27×, le onde della coda riverberante dello scocco 1,0–3,1×.
+ * Senza questa informazione, con il microfono nella stanza il rilascio non si
+ * spegne netto e il picco più forte dei primi 400 ms è un'onda della sua coda:
+ * due tiri su dieci misuravano 0,157 e 0,180 s invece di 0,361 e 0,393.
+ * L'ampiezza da sola non li separa (0,03 l'onda, 0,04 l'impatto). La scelta la
+ * fa la macchina, che preferisce gli attacchi e ripiega sulle onde quando in
+ * finestra non ce ne sono (a 60 m il compound ha un impatto sepolto nel
+ * rumore, salita 1,9–3,4×: lì il ripiego è l'unico candidato).
+ *
  * Restituisce eventi [ShotBranch.IMPACT_PEAK] con `peakIndex` = campione del
  * massimo: la macchina li tratta come candidati, la finestra di plausibilità
  * li filtra.
@@ -42,11 +55,19 @@ internal class BroadbandPeakDetector(
     windowMs: Double = 5.0,
     minGapMs: Double = 30.0,
     private val floor: Double = 0.005,
-    private val minBalance: Double = 0.15
+    private val minBalance: Double = 0.15,
+    riseWindowMs: Double = 60.0,
+    private val riseFactor: Double = 4.0
 ) {
 
     private val window = (sampleRateHz * windowMs / 1000.0).toInt().coerceAtLeast(1)
     private val minGapSamples = (sampleRateHz * minGapMs / 1000.0).toLong()
+
+    /** La storia dell'inviluppo per il confronto di salita (un attacco contro una coda). */
+    private val riseWindow = (sampleRateHz * riseWindowMs / 1000.0).toInt().coerceAtLeast(1)
+    private val riseHistory = DoubleArray(riseWindow)
+    private var risePosition = 0
+    private var riseFilled = 0
 
     private val lowSquares = DoubleArray(window)
     private val midSquares = DoubleArray(window)
@@ -75,6 +96,9 @@ internal class BroadbandPeakDetector(
         previousIndex = 0L
         rising = false
         pending = null
+        riseHistory.fill(0.0)
+        risePosition = 0
+        riseFilled = 0
     }
 
     /** Consuma un campione dei due rami già filtrati; aggiunge al massimo un picco. */
@@ -97,6 +121,10 @@ internal class BroadbandPeakDetector(
         val lowEnvelope = sqrt(sumLow / window)
         val midEnvelope = sqrt(sumMid / window)
         val broadband = lowEnvelope + midEnvelope
+
+        riseHistory[risePosition] = broadband
+        risePosition = (risePosition + 1) % riseWindow
+        if (riseFilled < riseWindow) riseFilled++
 
         if (broadband > previousBroadband) {
             rising = true
@@ -138,12 +166,32 @@ internal class BroadbandPeakDetector(
             startIndex = index,
             peakIndex = index,
             endIndex = index,
-            peakAmplitude = amplitude.toFloat()
+            peakAmplitude = amplitude.toFloat(),
+            isAttack = isNewAttack(amplitude)
         )
     }
 
     private fun isBroadband(low: Double, mid: Double): Boolean {
         val strongest = max(low, mid)
         return strongest > 0.0 && min(low, mid) >= minBalance * strongest
+    }
+
+    /**
+     * Vero se il picco nasce da un attacco e non è un'onda della coda.
+     *
+     * In una coda riverberante l'inviluppo scende e risale di poco: ogni
+     * massimo locale vale 1,1–2 volte il minimo dei 60 ms precedenti, che è il
+     * massimo della stessa vibrazione un istante prima. Un urto no: parte dal
+     * silenzio (o dalla coda già spenta) e sale di 6–27 volte. Il minimo è
+     * limitato dal pavimento: sul silenzio digitale il rapporto sarebbe
+     * infinito e non direbbe niente.
+     */
+    private fun isNewAttack(amplitude: Double): Boolean {
+        var lowest = Double.MAX_VALUE
+        val count = if (riseFilled < riseWindow) riseFilled else riseWindow
+        for (i in 0 until count) {
+            if (riseHistory[i] < lowest) lowest = riseHistory[i]
+        }
+        return amplitude >= riseFactor * max(lowest, floor)
     }
 }

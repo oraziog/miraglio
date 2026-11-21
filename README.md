@@ -415,11 +415,13 @@ ffmpeg -i registrazione.mp3 -ac 1 -ar 48000 -sample_fmt s16 app/build/audio/tiri
 ```
 
 Opzioni: `-Pmodo=continuo` (tutto il file d'un fiato invece di una sessione per
-tiro), `-PuseClicker=false`, `-PoffsetMs=150`, e il profilo arco con cui
-costruire la banda di plausibilità: `-Pprofilo=70m|recurve|barebow|compound`
-(`-Pdmin`/`-Pdmax` sovrascrivono il campo di tiro). **Senza profilo la banda
-non c'è e il veto non si applica**, come in produzione senza calibrazione: non
-si ricade su una costante.
+tiro), `-PuseClicker=false`, `-PoffsetMs=150`, `-PautoClicker=true` (il motore
+decide da solo se il clicker c'è), `-PreleaseFloor=0.05` (il pavimento di
+ampiezza della corda che parte, in ampiezza di picco: 0,05 è −26 dBFS), e il
+profilo arco con cui costruire la banda di plausibilità:
+`-Pprofilo=70m|recurve|barebow|compound` (`-Pdmin`/`-Pdmax` sovrascrivono il
+campo di tiro). **Senza profilo la banda non c'è e il veto non si applica**,
+come in produzione senza calibrazione: non si ricade su una costante.
 
 La tabella che stampa confronta ogni scocco misurato dal motore con i riferimenti
 passati (i quaranta misurati a mano su una registrazione di dodici minuti, 40
@@ -471,6 +473,137 @@ Fra quel che è stato provato e misurato, senza effetto o peggio: selezione per
 rapporto STA/LTA, per durata del transiente, con la soglia del ramo grave
 abbassata, con la previsione del tiro precedente, e una soglia relativa
 sull'acuto coincidente (31 tiri su 36 invece di 33).
+
+### La sessione a 18 m (riferimento vicino e silenzioso)
+
+Secondo riferimento del progetto, e il caso opposto al primo: **sette minuti a
+18 m in sala**, telefono a terra con il microfono verso il paglione, dieci
+frecce, nessun clicker e nessuna voce se non due frasi lontane. La distanza è
+quella dichiarata da chi ha tirato; **la velocità dell'arco resta ignota** e non
+si ricava da questo file, quindi la sessione entra nei riferimenti **senza
+banda** (`barebow` a 51 m/s darebbe 0,371–0,712 s, che non contiene il Δ
+misurato: sarebbe una banda inventata).
+
+La tabella misurata sta in
+[app/src/test/resources/audio/voleo_18m_tiri.csv](app/src/test/resources/audio/voleo_18m_tiri.csv):
+
+| # | scocco (s) | Δ (s) | acuto | medio | grave | SNR grave |
+|---|---|---|---|---|---|---|
+| 1 | 51,611 | 0,293 | 0,033 | 0,037 | 0,078 | 380 |
+| 2 | 88,501 | 0,314 | 0,033 | 0,055 | 0,025 | 120 |
+| 3 | 128,781 | 0,316 | 0,036 | 0,052 | 0,056 | 273 |
+| 4 | 160,150 | 0,330 | 0,037 | 0,030 | 0,065 | 318 |
+| 5 | 193,869 | 0,323 | 0,038 | 0,060 | 0,030 | 145 |
+| 6 | 264,374 | 0,329 | 0,043 | 0,050 | 0,069 | 337 |
+| 7 | 298,488 | 0,321 | 0,032 | 0,081 | 0,051 | 251 |
+| 8 | 334,549 | 0,320 | 0,034 | 0,047 | 0,065 | 315 |
+| 9 | 368,825 | 0,338 | 0,039 | 0,032 | 0,048 | 234 |
+| 10 | 406,825 | 0,306 | 0,033 | 0,119 | 0,024 | 115 |
+
+Δ mediana **0,321 s** (media 0,319, scarto tipo 12 ms). Le colonne di ampiezza
+sono le tre ampiezze dell'inviluppo misurate offline (acuto 6–11,5 kHz, medio
+1,5–8 kHz, grave 120–900 Hz) e l'SNR è quello del grave sul fondo della stessa
+banda: 41–52 dB, cioè un file **pulito**, dove il fondo utile sta a −93 dBFS.
+
+Ed è proprio quello che lo rompeva. Con soglie pensate per i 70 m il motore su
+questo file apriva una sessione a ogni fruscio — **37 misure e 72 sessioni
+chiuse senza impatto** su dieci tiri — perché qualunque rumore da 0,008 supera
+uno STA/LTA di 3 quando il fondo è a −93 dBFS. I falsi si riconoscono da soli
+nell'ampiezza: lo scocco inventato vale **0,001–0,047**, i dieci scocchi veri
+**0,154–0,248**. La corda che parte a un metro dal microfono è sempre un evento
+forte; il fruscio no. Da lì il pavimento assoluto
+`ShotTimingConfig.minReleaseAmplitude` = **0,05** (−26 dBFS), applicato
+**all'apertura del tiro** e non agli eventi con cui si conferma l'impatto: a 70
+m il battifreccia in alto vale 0,006 e una soglia così lo cancellerebbe.
+
+Risultato sullo stesso file, `-Pmodo=continuo -PuseClicker=false`:
+
+```
+scocchi agganciati: 10/10
+con impatto misurato: 10/10
+misure del motore: 10 (non collegate a un riferimento: 0)
+sessioni chiuse senza impatto: 0
+errore mediano rispetto al riferimento: -1 ms (scarto tipo 7 ms)
+delta dei tiri agganciati: medio 0.318 s, mediana 0.322 s
+```
+
+Nessun falso positivo, Δ mediana 0,322 s contro 0,321 misurata offline. Il
+pavimento non tocca i 70 m (39/40, +8 ms, Δ medio 1,441 s, identici), ma ne
+riduce le misure spurie da 188 a 108: quelle in più erano frase e rumore che
+superavano il trigger, non tiri. Lo sweep 0,02–0,05 è nei numeri qui sopra; con
+0,02 e 0,03 su questo file resta una misura falsa (una sillaba a 236,6 s,
+acuto 0,047) e con 0,05 sparisce.
+
+I test automatici usano tre finestre ritagliate da questa sessione:
+`voleo_18m_51.wav` e `voleo_18m_368.wav` (due tiri veri, il secondo con
+l'impatto più debole del set) e `voleo_18m_silenzio.wav`, otto secondi di sala
+vuota in cui il motore senza pavimento inventava due tiri a 3,8 e 7,4 s.
+
+### La sessione con il microfono a 3 m dalla linea di tiro
+
+Terzo riferimento, e il primo con il telefono **lontano dalla corda**: sei
+minuti e diciotto, microfono a 3 m dalla linea di tiro, dieci frecce. La
+distanza del bersaglio **non è dichiarata** e non si ricava senza la velocità
+dell'arco: il Δ non dipende da quanto è lontano il microfono (il suono del
+rilascio perde quei 3 m e l'impatto li riguadagna), quindi anche questa sessione
+resta nei riferimenti **senza banda**.
+
+| # | scocco (s) | Δ (s) | acuto scocco | medio impatto | grave impatto |
+|---|---|---|---|---|---|
+| 1 | 76,157 | 0,353 | 0,058 | 0,054 | 0,016 |
+| 2 | 108,253 | 0,346 | 0,044 | 0,029 | 0,058 |
+| 3 | 141,013 | 0,361 | 0,056 | 0,011 | 0,030 |
+| 4 | 171,741 | 0,376 | 0,060 | 0,018 | 0,033 |
+| 5 | 205,569 | 0,393 | 0,067 | 0,013 | 0,025 |
+| 6 | 237,558 | 0,348 | 0,043 | 0,078 | 0,015 |
+| 7 | 269,447 | 0,354 | 0,052 | 0,086 | 0,032 |
+| 8 | 298,617 | 0,330 | 0,044 | 0,084 | 0,012 |
+| 9 | 328,503 | 0,366 | 0,053 | 0,043 | 0,015 |
+| 10 | 362,942 | 0,355 | 0,060 | 0,083 | 0,009 |
+
+Δ mediana **0,354 s** (media 0,358, scarto tipo 16 ms). La tabella completa, con
+SNR per tiro, sta in
+[app/src/test/resources/audio/tiri_3m_riferimenti.csv](app/src/test/resources/audio/tiri_3m_riferimenti.csv).
+
+Qui il rilascio arriva attutito (acuto 0,043–0,067, sopra il pavimento di 0,05
+per un pelo) e — soprattutto — **la stanza non lo spegne netto**. L'inviluppo
+lo+mid scende per 300 ms con dentro un'onda a 0,15 s che vale 0,03, quanto
+l'impatto vero a 0,35 s (0,04): stesso ordine di ampiezza, quindi nessuna soglia
+li separa. Con il solo criterio dell'ampiezza due tiri su dieci misuravano
+**0,157 e 0,180 s** invece di 0,361 e 0,393, cioè una distanza inventata.
+
+La differenza non è l'ampiezza, è la **forma**: un urto è un attacco che parte
+da un minimo, un'onda di coda è una risalita del 10–60% sopra il minimo dei 60
+ms precedenti. Misurato sui venti tiri delle due sessioni a 18 m (microfono a 1
+m e a 3 m): gli impatti veri salgono **5,9–27×**, le onde della coda
+**1,0–3,1×**. Il rilevatore di picchi (`BroadbandPeakDetector`) porta perciò
+l'informazione `isAttack` e la macchina **preferisce un attacco**, ripiegando
+sul picco più forte quando in finestra non ce n'è nessuno: a 60 m il compound ha
+un impatto sepolto nel rumore (salita 1,9–3,4×) e lì il ripiego è l'unico
+candidato.
+
+Risultato sullo stesso file, `-Pmodo=continuo -PuseClicker=false`:
+
+```
+scocchi agganciati: 10/10
+con impatto misurato: 10/10
+misure del motore: 12 (non collegate a un riferimento: 2)
+  misura fuori tabella: scocco 5.175 s, delta 0.546 s
+  misura fuori tabella: scocco 374.817 s, delta 0.905 s
+sessioni chiuse senza impatto: 0
+errore mediano rispetto al riferimento: -4 ms (scarto tipo 15 ms)
+delta dei tiri agganciati: medio 0.362 s, mediana 0.358 s
+```
+
+Le due misure fuori tabella stanno prima del primo tiro (5,2 s) e dopo
+l'ultimo (374,8 s): è parlato, non frecce. Il Δ del motore è 4 ms più lungo di
+quello misurato offline in mediana, e fino a 30 ms più lungo nei due tiri dove
+l'attacco ha un picco arrotondato: la tabella prende l'inizio dell'inviluppo,
+il motore il suo massimo.
+
+Test automatici: `tiri_3m_141.wav` (il tiro che sbagliava, ora a 0,388 s) e
+`tiri_3m_76.wav` in `RealRecordingTest`, con Δ atteso dalla tabella offline e
+tolleranza 40 ms.
 
 ---
 

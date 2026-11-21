@@ -80,6 +80,12 @@ object ShotAudioProbe {
      */
     const val TOLLERANZA_S = 0.120
 
+    /**
+     * Il pavimento di ampiezza con cui si decide se un acuto è la corda: lo
+     * stesso valore predefinito di produzione.
+     */
+    val DEFAULT_RELEASE_FLOOR: Float = ShotTimingConfig().minReleaseAmplitude
+
     /** Quanto prima del riferimento si apre la sessione, in modalità per tiro. */
     const val PRE_ROLL_S = 1.2
 
@@ -124,11 +130,13 @@ object ShotAudioProbe {
     private fun config(
         rate: Int,
         banda: ClosedFloatingPointRange<Float>?,
-        autoClicker: Boolean = false
+        autoClicker: Boolean = false,
+        releaseFloor: Float = DEFAULT_RELEASE_FLOOR
     ) = ShotTimingConfig(
         sampleRateHz = rate,
         plausibleTotalTimeS = banda,
-        autoClicker = autoClicker
+        autoClicker = autoClicker,
+        minReleaseAmplitude = releaseFloor
     )
 
     @JvmStatic
@@ -136,7 +144,7 @@ object ShotAudioProbe {
         if (args.isEmpty()) {
             error(
                 "uso: ShotAudioProbe <wav> [tiro|continuo] [useClicker=true] [offsetMs=0] " +
-                    "[riferimenti.csv] [profilo] [dmin] [dmax] [autoClicker=false]"
+                    "[riferimenti.csv] [profilo] [dmin] [dmax] [autoClicker=false] [releaseFloor]"
             )
         }
         val file = File(args[0])
@@ -156,6 +164,7 @@ object ShotAudioProbe {
         val dmin = args.getOrNull(6)?.toFloatOrNull() ?: profilo?.dminM
         val dmax = args.getOrNull(7)?.toFloatOrNull() ?: profilo?.dmaxM
         val autoClicker = args.getOrNull(8)?.toBooleanStrictOrNull() ?: false
+        val releaseFloor = args.getOrNull(9)?.toFloatOrNull() ?: DEFAULT_RELEASE_FLOOR
         // Senza profilo non c'è una banda: il veto non si applica, invece di
         // ricadere sulla vecchia costante 1,0–2,0 s che descrive solo i 70 m.
         val banda = if (profilo != null && dmin != null && dmax != null) {
@@ -167,7 +176,8 @@ object ShotAudioProbe {
         println("file: ${file.name} (${file.length() / 1024} KiB)")
         println(
             "modo: ${modo.name.lowercase()}  clicker=$useClicker  offset=${offsetMs}ms  " +
-                "auto=$autoClicker  tolleranza=${(TOLLERANZA_S * 1000).toInt()}ms"
+                "auto=$autoClicker  tolleranza=${(TOLLERANZA_S * 1000).toInt()}ms  " +
+                "pavimento rilascio=%.3f".format(releaseFloor)
         )
         if (banda == null) {
             println("plausibilita': nessuna (manca un profilo calibrato: nessun veto)")
@@ -180,8 +190,9 @@ object ShotAudioProbe {
 
         val iniziato = System.currentTimeMillis()
         val tiri = when (modo) {
-            Modo.TIRO -> analizzaPerTiro(file, useClicker, offsetMs, riferimenti, banda, autoClicker)
-            Modo.CONTINUO -> analizzaContinuo(file, useClicker, offsetMs, banda, autoClicker)
+            Modo.TIRO ->
+                analizzaPerTiro(file, useClicker, offsetMs, riferimenti, banda, autoClicker, releaseFloor)
+            Modo.CONTINUO -> analizzaContinuo(file, useClicker, offsetMs, banda, autoClicker, releaseFloor)
         }
         println("riferimenti: ${riferimenti.size}")
         println("analisi: ${tiri.size} rilevamenti in ${(System.currentTimeMillis() - iniziato) / 1000} s")
@@ -219,7 +230,8 @@ object ShotAudioProbe {
         offsetMs: Float,
         riferimenti: DoubleArray = RIFERIMENTI,
         banda: ClosedFloatingPointRange<Float>?,
-        autoClicker: Boolean = false
+        autoClicker: Boolean = false,
+        releaseFloor: Float = DEFAULT_RELEASE_FLOOR
     ): List<Tiro> {
         val wav = WavInput(file)
         val rate = wav.sampleRate
@@ -227,7 +239,7 @@ object ShotAudioProbe {
         val block = FloatArray(rate / 50)
         riferimenti.forEach { riferimento ->
             val analyzer = AcousticShotAnalyzer(rate)
-            val machine = ShotTimingMachine(config(rate, banda, autoClicker))
+            val machine = ShotTimingMachine(config(rate, banda, autoClicker, releaseFloor))
             machine.startListening(useClicker, offsetMs)
             machine.onStability(true)
             machine.arm(0)
@@ -258,12 +270,13 @@ object ShotAudioProbe {
         useClicker: Boolean,
         offsetMs: Float,
         banda: ClosedFloatingPointRange<Float>?,
-        autoClicker: Boolean = false
+        autoClicker: Boolean = false,
+        releaseFloor: Float = DEFAULT_RELEASE_FLOOR
     ): List<Tiro> {
         val wav = WavInput(file)
         val rate = wav.sampleRate
         val analyzer = AcousticShotAnalyzer(rate)
-        val machine = ShotTimingMachine(config(rate, banda, autoClicker))
+        val machine = ShotTimingMachine(config(rate, banda, autoClicker, releaseFloor))
 
         fun nuovaSessione() {
             machine.startListening(useClicker, offsetMs)
@@ -311,17 +324,27 @@ object ShotAudioProbe {
 
     data class Report(
         val righe: List<Riga>,
+        /** Sessioni concluse dal motore, con o senza impatto. */
         val rilevamentiTotali: Int,
+        /** Sessioni che hanno prodotto una misura (scocco e impatto). */
+        val misuratiTotali: Int,
+        /** Misure che non corrispondono a nessun riferimento. */
+        val misureExtra: Int,
+        /** Le stesse misure, per vederle: scocco e Δ. */
+        val extra: List<Tiro> = emptyList(),
         val offsetMedianoMs: Double,
         val scartoMs: Double,
-        val deltaMedioS: Double
+        val deltaMedioS: Double,
+        val deltaMedianoS: Double
     ) {
         val agganciati: Int get() = righe.count { it.agganciato }
         val conDelta: Int get() = righe.count { it.deltaS != null }
+        val senzaImpatto: Int get() = rilevamentiTotali - misuratiTotali
     }
 
     /** Confronta i rilevamenti con i riferimenti e riassume. */
     fun confronta(tiri: List<Tiro>, riferimenti: DoubleArray = RIFERIMENTI): Report {
+        val usati = mutableSetOf<Int>()
         val righe = riferimenti.mapIndexed { indice, riferimento ->
             var migliore = -1
             var miglioreErrore = Double.MAX_VALUE
@@ -332,7 +355,7 @@ object ShotAudioProbe {
                     migliore = i
                 }
             }
-            val tiro = if (migliore >= 0 && miglioreErrore <= TOLLERANZA_S) tiri[migliore] else null
+            val tiro = if (migliore >= 0 && miglioreErrore <= TOLLERANZA_S) tiri[migliore].also { usati += migliore } else null
             Riga(
                 indice = indice + 1,
                 riferimentoS = riferimento,
@@ -345,6 +368,9 @@ object ShotAudioProbe {
 
         val errori = righe.mapNotNull { it.erroreMs }
         val delta = righe.mapNotNull { it.deltaS }
+        val misurati = tiri.count { it.deltaS != null }
+        val extra = tiri.filterIndexed { i, tiro -> i !in usati && tiro.deltaS != null }
+        val misureExtra = misurati - tiri.indices.count { it in usati && tiri[it].deltaS != null }
         val mediana = errori.sorted().let {
             if (it.isEmpty()) 0.0
             else if (it.size % 2 == 1) it[it.size / 2]
@@ -353,12 +379,22 @@ object ShotAudioProbe {
         val scarto =
             if (errori.isEmpty()) 0.0
             else sqrt(errori.sumOf { (it - mediana) * (it - mediana) } / errori.size)
+        val deltaOrdinati = delta.sorted()
+        val deltaMediano = when {
+            deltaOrdinati.isEmpty() -> 0.0
+            deltaOrdinati.size % 2 == 1 -> deltaOrdinati[deltaOrdinati.size / 2].toDouble()
+            else -> (deltaOrdinati[deltaOrdinati.size / 2 - 1] + deltaOrdinati[deltaOrdinati.size / 2]) / 2.0
+        }
         return Report(
             righe = righe,
             rilevamentiTotali = tiri.size,
+            misuratiTotali = misurati,
+            misureExtra = misureExtra.coerceAtLeast(0),
+            extra = extra,
             offsetMedianoMs = mediana,
             scartoMs = scarto,
-            deltaMedioS = if (delta.isEmpty()) 0.0 else delta.sumOf { it.toDouble() } / delta.size
+            deltaMedioS = if (delta.isEmpty()) 0.0 else delta.sumOf { it.toDouble() } / delta.size,
+            deltaMedianoS = deltaMediano
         )
     }
 
@@ -380,16 +416,25 @@ object ShotAudioProbe {
         println("scocchi agganciati: ${report.agganciati}/${report.righe.size}")
         println("con impatto misurato: ${report.conDelta}/${report.righe.size}")
         println(
-            "rilevamenti totali: ${report.rilevamentiTotali} " +
-                "(extra, cioe' parlato e rumore: ${report.rilevamentiTotali - report.agganciati})"
+            "misure del motore: ${report.misuratiTotali} " +
+                "(non collegate a un riferimento: ${report.misureExtra})"
         )
+        report.extra.take(12).forEach { tiro ->
+            println(
+                "  misura fuori tabella: scocco %.3f s, delta %.3f s".format(
+                    tiro.releaseS,
+                    tiro.deltaS ?: 0f
+                )
+            )
+        }
+        println("sessioni chiuse senza impatto: ${report.senzaImpatto}")
         println(
             "errore mediano rispetto al riferimento: %+.0f ms (scarto tipo %.0f ms)"
                 .format(report.offsetMedianoMs, report.scartoMs)
         )
         println(
-            "delta medio dei tiri agganciati: %.3f s (riferimento 1,445 s)"
-                .format(report.deltaMedioS)
+            "delta dei tiri agganciati: medio %.3f s, mediana %.3f s"
+                .format(report.deltaMedioS, report.deltaMedianoS)
         )
         val mancati = report.righe.filter { !it.agganciato }.map { it.indice }
         if (mancati.isNotEmpty()) println("tiri non agganciati: ${mancati.joinToString(", ")}")

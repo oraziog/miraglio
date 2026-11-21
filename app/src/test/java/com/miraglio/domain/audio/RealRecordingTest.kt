@@ -31,7 +31,8 @@ class RealRecordingTest {
     private fun unTiro(
         risorsa: String,
         useClicker: Boolean = true,
-        banda: ClosedFloatingPointRange<Float>? = BANDA_70M
+        banda: ClosedFloatingPointRange<Float>? = BANDA_70M,
+        releaseFloor: Float = ShotAudioProbe.DEFAULT_RELEASE_FLOOR
     ): ShotAudioProbe.Tiro {
         val file = temp.newFile(risorsa)
         javaClass.getResourceAsStream("/audio/$risorsa")!!.use { input ->
@@ -41,7 +42,8 @@ class RealRecordingTest {
             file,
             useClicker = useClicker,
             offsetMs = 0f,
-            banda = banda
+            banda = banda,
+            releaseFloor = releaseFloor
         )
         assertEquals("la finestra di $risorsa contiene un solo tiro", 1, tiri.size)
         return tiri.single()
@@ -178,6 +180,97 @@ class RealRecordingTest {
             distanzaM = 51.0,
             tolleranzaDistanza = 2.0
         )
+    }
+
+    /**
+     * La sessione del 21/11/2026 a 18 m in sala, telefono orizzontale a terra e
+     * microfono verso il paglione: dieci frecce, Δ mediana 0,321 s.
+     *
+     * Il caso che ha reso necessario il pavimento di rilascio: il fondo nella
+     * banda 1,5–8 kHz sta a −93 dBFS, quindi un fruscio qualsiasi supera il
+     * trigger e apre un tiro. Senza pavimento il motore produceva 37 misure,
+     * con scocchi da 0,001 a 0,047; con il pavimento sono dieci, e il tiro
+     * dopo il taglio cade dove l'ha messo la misura offline.
+     *
+     * Qui la banda di plausibilità non c'è di proposito: la distanza è
+     * dichiarata (18 m) ma la velocità dell'arco è ignota, e una banda senza
+     * velocità inventerebbe il numero che poi si legge come distanza.
+     */
+    @Test
+    fun ilTiroPulitoAVentottoMetriSiMisuraSenzaModello() {
+        val tiro = unTiro("voleo_18m_51.wav", useClicker = false, banda = null)
+        assertEquals("lo scocco nella finestra del 21/11", 2.011, tiro.releaseS, 0.060)
+        assertEquals(
+            "scocco -> impatto a 18 m",
+            0.293,
+            requireNotNull(tiro.deltaS) { "il battifreccia deve esserci" }.toDouble(),
+            0.020
+        )
+    }
+
+    /**
+     * Il tiro con l'impatto più debole della stessa sessione (0,048 di grave
+     * contro 0,024–0,078 degli altri): il pavimento deve lasciarlo passare,
+     * perché è comunque 234 volte il rumore di fondo.
+     */
+    @Test
+    fun ancheIlTiroPiuDeboleDellaSessioneSiMisura() {
+        val tiro = unTiro("voleo_18m_368.wav", useClicker = false, banda = null)
+        assertEquals(2.425, tiro.releaseS, 0.060)
+        assertEquals(0.338, requireNotNull(tiro.deltaS).toDouble(), 0.020)
+    }
+
+    /**
+     * Otto secondi di sala vuota, primi della stessa sessione: qui il vecchio
+     * motore inventava due tiri (a 3,8 e 7,4 s, scocco 0,005 e 0,008, impatto
+     * 0,007 e 0,003). Un telemetro che misura il silenzio non è usabile.
+     */
+    @Test
+    fun ilSilenzioDellaStessaSalaNonInventaTiri() {
+        val file = temp.newFile("voleo_18m_silenzio.wav")
+        javaClass.getResourceAsStream("/audio/voleo_18m_silenzio.wav")!!.use { input ->
+            file.outputStream().use { output -> input.copyTo(output) }
+        }
+        val tiri = ShotAudioProbe.analizzaContinuo(
+            file,
+            useClicker = false,
+            offsetMs = 0f,
+            banda = null
+        )
+        assertEquals("nessun tiro in otto secondi di sala vuota", 0, tiri.size)
+    }
+
+    /**
+     * La sessione del 21/11/2026 con il microfono a **3 m dalla linea di tiro**:
+     * dieci frecce, Δ mediana 0,354 s. La distanza del bersaglio non è
+     * dichiarata e non si ricava senza la velocità dell'arco: il Δ non dipende
+     * da quanto è lontano il microfono (il suono del rilascio perde quei 3 m e
+     * l'impatto li riguadagna), quindi resta un numero di tempo e basta.
+     *
+     * Qui il rilascio arriva attutito (acuto 0,045–0,067 nella tabella offline)
+     * e la stanza non lo spegne netto: l'inviluppo lo+mid scende per 300 ms con
+     * dentro un'onda a 0,15 s che vale 0,03, quanto l'impatto vero a 0,35 s
+     * (0,04). Prima del criterio di salita il motore prendeva quell'onda e due
+     * tiri su dieci misuravano 0,157 e 0,180 s invece di 0,361 e 0,393.
+     *
+     * Nessuna banda, come per la sessione con il microfono a 1 m (distanza non
+     * dichiarata, velocità ignota). Il Δ atteso è quello della tabella offline;
+     * il motore può cadere sul picco dell'attacco invece che sul suo inizio
+     * (fino a ~30 ms dopo), per questo la tolleranza è 40 ms.
+     */
+    @Test
+    fun ilMicrofonoATreMetriNonScambiaLaCodaPerIlBattifreccia() {
+        val tiro = unTiro("tiri_3m_141.wav", useClicker = false, banda = null)
+        assertEquals(1.413, tiro.releaseS, 0.060)
+        assertEquals(0.361, requireNotNull(tiro.deltaS).toDouble(), 0.040)
+    }
+
+    /** Lo stesso file, il primo tiro: qui la coda non basta a ingannare il motore. */
+    @Test
+    fun ilTiroConIlMicrofonoATreMetriSiMisura() {
+        val tiro = unTiro("tiri_3m_76.wav", useClicker = false, banda = null)
+        assertEquals(1.557, tiro.releaseS, 0.060)
+        assertEquals(0.353, requireNotNull(tiro.deltaS).toDouble(), 0.040)
     }
 
     /** I modelli dei due archi nuovi. */

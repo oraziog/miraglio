@@ -248,7 +248,9 @@ dependencies {
 // Facoltativi: -PuseClicker=false (senza clicker il primo picco è lo scocco),
 // -PoffsetMs=150 (ritardo click->rilascio dichiarato nel profilo),
 // -Pprofilo=70m|recurve|barebow|compound per la banda di plausibilità (senza
-// profilo il motore non applica il veto), con -Pdmin/-Pdmax facoltativi.
+// profilo il motore non applica il veto), con -Pdmin/-Pdmax facoltativi,
+// -PautoClicker=true (il motore decide da solo se il clicker c'è) e
+// -PreleaseFloor=0.05 (pavimento di ampiezza della corda che parte).
 // ---------------------------------------------------------------------------
 tasks.register<JavaExec>("analyzeShotAudio") {
     group = "verification"
@@ -275,7 +277,8 @@ tasks.register<JavaExec>("analyzeShotAudio") {
                 providers.gradleProperty("profilo").orNull ?: "",
                 providers.gradleProperty("dmin").orNull ?: "",
                 providers.gradleProperty("dmax").orNull ?: "",
-                providers.gradleProperty("autoClicker").orNull ?: ""
+                providers.gradleProperty("autoClicker").orNull ?: "",
+                providers.gradleProperty("releaseFloor").orNull ?: ""
             )
         }
     )

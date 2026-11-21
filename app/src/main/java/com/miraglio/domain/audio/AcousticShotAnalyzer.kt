@@ -24,7 +24,14 @@ data class AcousticEvent(
     val startIndex: Long,
     val peakIndex: Long,
     val endIndex: Long,
-    val peakAmplitude: Float
+    val peakAmplitude: Float,
+    /**
+     * Per i soli picchi d'inviluppo: vero se il picco nasce da un attacco e non
+     * da un'onda della coda riverberante (vedi [BroadbandPeakDetector]). Gli
+     * eventi dei rami triggerati non hanno questa informazione: restano a
+     * `true` e la macchina non la guarda.
+     */
+    val isAttack: Boolean = true
 )
 
 /**
