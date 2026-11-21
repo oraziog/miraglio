@@ -114,6 +114,17 @@ data class ShotTimingConfig(
  * Il primo transiente può però essere una frase: quando ne arriva un altro
  * almeno [ANCORA_CLICK_FACTOR] volte più forte, quello è il click vero e la
  * finestra riparte da lì (vedi [onEvent]).
+ *
+ * **L'impatto non è solo un evento triggerato.** A distanza breve il colpo
+ * torna troppo quieto rispetto al rilascio per superare il trigger del ramo
+ * grave (a 18 m il rapporto STA/LTA all'impatto è 0,4): nella scelta entrano
+ * perciò anche i picchi locali dell'inviluppo lo+mid ([ShotBranch.IMPACT_PEAK],
+ * vedi [BroadbandPeakDetector]), filtrati dalla stessa banda di plausibilità.
+ * L'ordine della scelta è: prima i picchi dell'inviluppo, poi i transienti a
+ * banda larga, poi i gravi triggerati. I picchi vengono prima perché sono
+ * l'unico candidato che esiste anche a distanza breve; i transienti a banda
+ * larga restano la scelta buona quando i picchi mancano (parlato che copre
+ * l'impatto). Il rilevatore di scocco e il clicker non cambiano.
  */
 class ShotTimingMachine(
     private val config: ShotTimingConfig = ShotTimingConfig()
@@ -138,27 +149,15 @@ class ShotTimingMachine(
     private var release: AcousticEvent? = null
     private var lowEvents = mutableListOf<AcousticEvent>()
 
+    /** Picchi locali di lo+mid: candidati d'impatto che il trigger non vede. */
+    private var peakEvents = mutableListOf<AcousticEvent>()
+
     /** Transienti acuti recenti: l'impatto deve avere un corrispondente qui. */
     private var highEvents = mutableListOf<AcousticEvent>()
     private var highestIndex = 0L
 
     /**
-     * Una promozione per tiro al massimo.
-     *
-     * Serve perch\u00e9 il caso da correggere \u00e8 uno solo: una frase presa per
-     * click prima del click vero. Senza limite, dopo la promozione il battito
-     * della corda pu\u00f2 superare di nuovo la soglia e il tiro riparte
-     * all'infinito, perdendolo.
-     */
-
-    /**
      * Azzera tutto e comincia ad aspettare che il telefono sia fermo.
-     *
-     * [expectedTotalTimeS] è il Δ che ci si aspetta di misurare, se si sa: il
-     * tiro precedente sullo stesso bersaglio, o il tempo che il modello
-     * calibrato prevede per quella distanza. Serve al momento di scegliere fra
-     * i transienti gravi — vedi [resolveImpactIfDue]. `null` significa "non lo
-     * so" e lascia il comportamento di prima.
      */
     fun startListening(useClicker: Boolean, releaseOffsetMs: Float) {
         clicker = useClicker
@@ -167,6 +166,7 @@ class ShotTimingMachine(
         releaseCandidates = mutableListOf()
         release = null
         lowEvents = mutableListOf()
+        peakEvents = mutableListOf()
         highEvents = mutableListOf()
         highestIndex = 0L
         _state.value = ShotTimingState(ShotStage.SETTLING, clickerUsed = useClicker)
@@ -187,6 +187,14 @@ class ShotTimingMachine(
     }
 
     fun onEvent(event: AcousticEvent) {
+        // I picchi d'inviluppo sono candidati d'impatto, non eventi della
+        // macchina a stati: non possono essere uno scocco né far ripartire il
+        // tiro, e si conservano solo per la scelta dell'impatto.
+        if (event.branch == ShotBranch.IMPACT_PEAK) {
+            peakEvents += event
+            pruneEvents()
+            return
+        }
         // Gli acuti si tengono tutti: servono a riconoscere l'impatto, che è
         // un urto e quindi arriva anche lassù (vedi [scegliImpatto]).
         if (event.branch == ShotBranch.HIGH_BAND) highEvents += event
@@ -229,7 +237,7 @@ class ShotTimingMachine(
 
             else -> Unit
         }
-        pruneLowEvents()
+        pruneEvents()
     }
 
     /**
@@ -335,6 +343,7 @@ class ShotTimingMachine(
         val releaseIndex = releaseReference(releaseEvent)
         val best = scegliImpatto(
             lowEvents.filter { it.peakIndex in start..end },
+            peakEvents.filter { it.peakIndex in start..end },
             releaseIndex = releaseIndex
         )
 
@@ -378,14 +387,22 @@ class ShotTimingMachine(
      * armonica e sta in basso. Sui tiri sbagliati misurati: l'impatto vero ha
      * un transiente del ramo acuto entro ±20 ms in 11 casi su 11, le scelte
      * sbagliate solo in 3 su 11. Quindi si preferisce il candidato grave che ha
-     * un acuto coincidente; se nessuno ce l'ha (o non ce n'è nessuno) resta la
-     * scelta di prima, il più forte.
+     * un acuto coincidente.
+     *
+     * A distanza breve, però, il trigger grave non produce proprio l'evento
+     * (l'impatto è quieto rispetto al rilascio appena avvenuto): per questo
+     * [picchi] porta i picchi locali dell'inviluppo lo+mid, già filtrati sulla
+     * presenza di **entrambe** le bande d'impatto da [BroadbandPeakDetector].
+     * Vengono **prima** dei transienti a banda larga e dei gravi senza acuto:
+     * a 18 m sono l'unico candidato che esiste. Il file a 70 m resta a 39/40 con
+     * 188 rilevamenti e +8 ms mediani, quindi la precedenza non gli costa nulla.
      */
     private fun scegliImpatto(
         candidati: List<AcousticEvent>,
+        picchi: List<AcousticEvent>,
         releaseIndex: Long
     ): AcousticEvent? {
-        if (candidati.isEmpty()) return null
+        if (candidati.isEmpty() && picchi.isEmpty()) return null
         val conAcuto = candidati.mapNotNull { grave ->
             val acuto = highEvents
                 .filter { kotlin.math.abs(it.peakIndex - grave.peakIndex) <= broadbandSamples }
@@ -393,30 +410,45 @@ class ShotTimingMachine(
             acuto?.let { grave to it }
         }
         val banda = config.plausibleTotalTimeS
-        fun plausibile(evento: AcousticEvent): Boolean {
+        fun plausibile(index: Long): Boolean {
             if (banda == null) return true
-            val delta = (evento.peakIndex - releaseIndex) / samplesPerSecond
-            return delta in banda
+            return (index - releaseIndex) / samplesPerSecond in banda
         }
+        fun plausibile(evento: AcousticEvent): Boolean = plausibile(evento.peakIndex)
 
-        // 1. banda larga **e** fisicamente possibile: è il caso buono.
+        // 1. Picco d'inviluppo lo+mid nella banda: la misura più fine, perché
+        //    l'inviluppo somma le due bande d'impatto invece di aspettare che
+        //    il grave superi un trigger (a 18 m non lo supera: STA/LTA 0,4).
+        //    Vince il più forte. Provato a scartare i picchi che seguono uno
+        //    precedente entro 200 ms (l'eco di un urto arriva dopo ed è più
+        //    forte): sui tiri 6 e 14 del compound li ripara, ma rompe i tiri
+        //    in cui un rumore secco precede l'impatto di 55–78 ms (barebow
+        //    54/60, compound 32/36). Non c'è modo di separarli senza toccare lo
+        //    scocco o stringere la banda: resta il più forte.
+        picchi
+            .filter { plausibile(it) }
+            .maxByOrNull { it.peakAmplitude }
+            ?.let { return it }
+
+        // 2. Nessun picco: banda larga **e** fisicamente possibile, il caso
+        //    buono dei transienti triggerati (è quello che regge i 70 m).
         conAcuto
             .filter { plausibile(it.first) }
             .maxByOrNull { (_, acuto) -> acuto.peakAmplitude }
             ?.let { return it.first }
 
-        // 2. Nessun urto plausibile: si ripiega su un grave plausibile, anche
-        //    senza acuto coincidente.
+        // 3. Nessun picco: si ripiega su un grave plausibile, anche senza
+        //    acuto coincidente.
         candidati
             .filter { plausibile(it) }
             .maxByOrNull { it.peakAmplitude }
             ?.let { return it }
 
-        // 3. Nessun candidato entra nella banda (modello sbagliato o bersaglio
-        //    fuori dal campo di tiro): meglio un impatto a banda larga che
-        //    niente, e poi il comportamento di sempre.
+        // 4. Nessun candidato entra nella banda (bersaglio fuori dal campo di
+        //    tiro): meglio un impatto a banda larga che niente, poi il
+        //    comportamento di sempre.
         conAcuto.maxByOrNull { (_, acuto) -> acuto.peakAmplitude }?.let { return it.first }
-        return candidati.maxByOrNull { it.peakAmplitude }
+        return (candidati + picchi).maxByOrNull { it.peakAmplitude }
     }
 
     /**
@@ -441,10 +473,11 @@ class ShotTimingMachine(
         }
     }
 
-    /** Tiene solo gli eventi gravi che possono ancora cadere in una finestra. */
-    private fun pruneLowEvents() {
+    /** Tiene solo gli eventi che possono ancora cadere in una finestra. */
+    private fun pruneEvents() {
         val cutoff = highestIndex - impactEndSamples - slackSamples
         lowEvents = lowEvents.filter { it.peakIndex >= cutoff }.toMutableList()
+        peakEvents = peakEvents.filter { it.peakIndex >= cutoff }.toMutableList()
         highEvents = highEvents.filter { it.peakIndex >= cutoff }.toMutableList()
     }
 
@@ -457,6 +490,7 @@ class ShotTimingMachine(
         releaseCandidates = mutableListOf()
         release = null
         lowEvents = mutableListOf()
+        peakEvents = mutableListOf()
         highEvents = mutableListOf()
         highestIndex = 0L
         _state.value = ShotTimingState(ShotStage.IDLE, clickerUsed = clicker)
@@ -494,7 +528,5 @@ class ShotTimingMachine(
          * prima o dopo.
          */
         const val BROADBAND_TOLERANCE_MS = 20f
-
-
     }
 }

@@ -415,18 +415,23 @@ ffmpeg -i registrazione.mp3 -ac 1 -ar 48000 -sample_fmt s16 app/build/audio/tiri
 ```
 
 Opzioni: `-Pmodo=continuo` (tutto il file d'un fiato invece di una sessione per
-tiro), `-PuseClicker=false`, `-PoffsetMs=150`, `-Pdump=app/build/audio/dump.tsv`
-(ogni rilevamento, per capire i mancati) e `-Ptrace` (i cambi di stato del
-motore).
+tiro), `-PuseClicker=false`, `-PoffsetMs=150`, e il profilo arco con cui
+costruire la banda di plausibilità: `-Pprofilo=70m|recurve|barebow|compound`
+(`-Pdmin`/`-Pdmax` sovrascrivono il campo di tiro). **Senza profilo la banda
+non c'è e il veto non si applica**, come in produzione senza calibrazione: non
+si ricade su una costante.
 
-La tabella che stampa confronta ogni scocco misurato dal motore con i quaranta
-riferimenti misurati a mano su una registrazione di dodici minuti (40 tiri a
-~70 m, con la voce del conduttore sopra), con l'errore in millisecondi, il Δ
-misurato e la distanza che ne ricava il modello balistico. Sullo stesso file,
-in modalità continua: **39 scocchi su 40** entro 120 ms (tolleranza dettata dai
-riferimenti letti a mano, dalla latenza del decoder MP3 e dall'inviluppo
-STA/LTA), errore mediano **+8 ms** con scarto tipo 7 ms, e **36 tiri su 39** con
-la distanza fra **65 e 75 m** (media 69,8 m; l'unico non agganciato è il 22).
+La tabella che stampa confronta ogni scocco misurato dal motore con i riferimenti
+passati (i quaranta misurati a mano su una registrazione di dodici minuti, 40
+tiri a ~70 m con la voce del conduttore sopra), con l'errore in millisecondi e
+il Δ misurato. La distanza non viene stampata: dipende dal modello dell'arco, e
+con il modello dei 70 m su un barebow o un compound darebbe un numero senza
+senso. Sullo stesso file dei 70 m, in modalità continua con `-Pprofilo=70m`:
+**39 scocchi su 40** entro 120 ms (tolleranza dettata dai riferimenti letti a
+mano, dalla latenza del decoder MP3 e dall'inviluppo STA/LTA), errore mediano
+**+8 ms** con scarto tipo 7 ms, Δ medio 1,441 s. Dei 39 tiri con Δ, tutti
+cadono fra **65 e 75 m** (media 69,9 m): è la banda del profilo, che è anche il
+veto; l'unico scocco non agganciato resta il 22.
 
 Come sono rientrati i quattro che mancavano:
 

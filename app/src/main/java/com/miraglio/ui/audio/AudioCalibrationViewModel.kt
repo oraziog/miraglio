@@ -164,6 +164,11 @@ class AudioCalibrationViewModel @Inject constructor(
                 val finalState = rangefinder.measure(
                     useClicker = profile.useClicker,
                     releaseOffsetMs = profile.releaseOffsetMs,
+                    // In calibrazione il modello è proprio quello che si sta
+                    // costruendo: una banda ricavata da pochi punti
+                    // scarterebbe i tiri che servono a correggerlo. Nessun
+                    // veto, non la vecchia finestra 1,0–2,0 s dei 70 m.
+                    plausibleTotalTimeS = null,
                     stability = motion.stable,
                     onState = { publishStage(it) }
                 )

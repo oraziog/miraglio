@@ -16,6 +16,7 @@ import com.miraglio.data.weather.TemperatureReading
 import com.miraglio.data.weather.TemperatureSource
 import com.miraglio.data.weather.WeatherCachePolicy
 import com.miraglio.data.weather.WeatherRepository
+import com.miraglio.domain.audio.ImpactPlausibility
 import com.miraglio.domain.audio.ShotReport
 import com.miraglio.domain.audio.ShotReportBuilder
 import com.miraglio.domain.audio.ShotStage
@@ -142,11 +143,23 @@ class AudioRangefinderViewModel @Inject constructor(
                 waveform = emptyList()
             )
 
+            // La finestra in cui un impatto è fisicamente possibile esce dal
+            // profilo (modello calibrato + distanze di calibrazione), non da
+            // una costante: a 18 m la costante 1,0–2,0 s non conteneva il tiro.
+            // `null` (profilo non calibrato) lascia il motore senza veto,
+            // come prima: meglio nessun veto che una finestra inventata.
+            val impactWindow = ImpactPlausibility.band(
+                model = _state.value.model,
+                distancesM = profile?.fitPoints?.map { it.distanceM }.orEmpty(),
+                airTempC = _state.value.temperature.celsius
+            )
+
             var cancelled = false
             try {
                 val finalState = rangefinder.measure(
                     useClicker = profile?.useClicker == true,
                     releaseOffsetMs = profile?.releaseOffsetMs ?: 0f,
+                    plausibleTotalTimeS = impactWindow,
                     stability = motion.stable,
                     onState = { publishStage(it) },
                     onLevel = ::onLevel

@@ -1,11 +1,12 @@
 package com.miraglio.tools
 
 import com.miraglio.domain.audio.AcousticShotAnalyzer
+import com.miraglio.domain.audio.ImpactPlausibility
 import com.miraglio.domain.audio.ShotStage
 import com.miraglio.domain.audio.ShotTimingConfig
 import com.miraglio.domain.audio.ShotTimingMachine
+import com.miraglio.domain.audio.ShotTimingState
 import com.miraglio.domain.ballistics.ArrowSpeedModel
-import com.miraglio.domain.ballistics.BallisticCalculator
 import java.io.Closeable
 import java.io.File
 import kotlin.math.abs
@@ -39,8 +40,10 @@ import kotlin.math.sqrt
  * ```
  *
  * Facoltativi: `-Pmodo=continuo`, `-PuseClicker=false`, `-PoffsetMs=150`,
- * `-Pdump=app/build/audio/rilevamenti.tsv` (tutti i rilevamenti, per capire i
- * mancati).
+ * `-Pprofilo=70m|recurve|barebow|compound` (con `-Pdmin`/`-Pdmax` per
+ * sovrascrivere il campo di tiro). Senza profilo non c'è banda di
+ * plausibilità: il motore non applica il veto, come in produzione senza
+ * calibrazione.
  */
 object ShotAudioProbe {
 
@@ -87,37 +90,46 @@ object ShotAudioProbe {
 
     data class Tiro(
         val releaseS: Double,
-        val deltaS: Float?,
-        val releaseAmpiezza: Float,
-        val impattoAmpiezza: Float?,
-        val tiroConcluso: Boolean
+        val deltaS: Float?
     )
 
-    /** La banda di Δ che la produzione usa: vedi [BallisticCalculator.PLAUSIBLE_TOTAL_TIME_S]. */
-    val PLAUSIBILE_PRODOTTO: ClosedFloatingPointRange<Float> =
-        BallisticCalculator.PLAUSIBLE_TOTAL_TIME_S
-
-    private var plausibile: ClosedFloatingPointRange<Float>? = PLAUSIBILE_PRODOTTO
-
-    private fun leggiBanda(testo: String): ClosedFloatingPointRange<Float>? {
-        if (testo.isBlank() || testo.equals("nessuno", ignoreCase = true)) return null
-        val pezzi = testo.split(",").map { it.trim().toFloat() }
-        require(pezzi.size == 2) { "banda da due numeri: $testo" }
-        return pezzi[0]..pezzi[1]
+    /**
+     * Un tipo di arco: velocità di uscita e campo di tiro da cui deriva la
+     * banda di Δ in cui un impatto è fisicamente possibile. È il preset della
+     * specifica, usato per misurare sessioni diverse dai quaranta tiri a 70 m.
+     */
+        data class Profilo(
+        val nome: String,
+        val vf: Float,
+        val decay: Float,
+        val dminM: Float,
+        val dmaxM: Float
+    ) {
+        val banda: ClosedFloatingPointRange<Float>?
+            get() = ImpactPlausibility.band(
+                model = ArrowSpeedModel(muzzleSpeedMs = vf, decayPerM = decay),
+                distancesM = listOf(dminM, dmaxM),
+                airTempC = 20f
+            )
     }
 
-    private fun config(rate: Int) = ShotTimingConfig(
+    val PROFILI = mapOf(
+        "barebow" to Profilo("barebow", 51f, 0.002f, 16f, 30f),
+        "recurve" to Profilo("recurve", 60f, 0.001f, 15f, 70f),
+        "compound" to Profilo("compound", 86f, 0.001f, 15f, 90f),
+        // Il profilo dei quaranta tiri a 70 m: modello calibrato e campo 65–75.
+        "70m" to Profilo("70m", 65f, 0.002f, 65f, 75f)
+    )
+
+    private fun config(rate: Int, banda: ClosedFloatingPointRange<Float>?) = ShotTimingConfig(
         sampleRateHz = rate,
-        plausibleTotalTimeS = plausibile
+        plausibleTotalTimeS = banda
     )
 
     @JvmStatic
     fun main(args: Array<String>) {
         if (args.isEmpty()) {
-            error(
-                "uso: ShotAudioProbe <wav> [tiro|continuo] [useClicker=true] [offsetMs=0] " +
-                    "[plausibile=1.0,2.0|nessuno]"
-            )
+            error("uso: ShotAudioProbe <wav> [tiro|continuo] [useClicker=true] [offsetMs=0] [riferimenti.csv]")
         }
         val file = File(args[0])
         require(file.isFile) { "non esiste: ${file.absolutePath}" }
@@ -128,41 +140,84 @@ object ShotAudioProbe {
         }
         val useClicker = args.getOrNull(2)?.toBooleanStrictOrNull() ?: true
         val offsetMs = args.getOrNull(3)?.toFloatOrNull() ?: 0f
-        plausibile = args.getOrNull(4)?.let(::leggiBanda) ?: PLAUSIBILE_PRODOTTO
-        val dump = System.getProperty("shotProbeDump")?.let(::File)
+        val riferimenti = args.getOrNull(4)?.takeIf { it.isNotBlank() }
+            ?.let { leggiRiferimenti(File(it)) } ?: RIFERIMENTI
+        val profilo = args.getOrNull(5)?.takeIf { it.isNotBlank() }?.let { nome ->
+            PROFILI[nome.lowercase()] ?: error("profilo sconosciuto: $nome (${PROFILI.keys})")
+        }
+        val dmin = args.getOrNull(6)?.toFloatOrNull() ?: profilo?.dminM
+        val dmax = args.getOrNull(7)?.toFloatOrNull() ?: profilo?.dmaxM
+        // Senza profilo non c'è una banda: il veto non si applica, invece di
+        // ricadere sulla vecchia costante 1,0–2,0 s che descrive solo i 70 m.
+        val banda = if (profilo != null && dmin != null && dmax != null) {
+            profilo.copy(dminM = dmin, dmaxM = dmax).banda
+        } else {
+            profilo?.banda
+        }
 
         println("file: ${file.name} (${file.length() / 1024} KiB)")
         println(
             "modo: ${modo.name.lowercase()}  clicker=$useClicker  offset=${offsetMs}ms  " +
-                "tolleranza=${(TOLLERANZA_S * 1000).toInt()}ms  " +
-                "plausibile=${plausibile ?: "nessuno"}"
+                "tolleranza=${(TOLLERANZA_S * 1000).toInt()}ms"
         )
+        if (banda == null) {
+            println("plausibilita': nessuna (manca un profilo calibrato: nessun veto)")
+        } else {
+            println(
+                "plausibilita': %.3f..%.3f s".format(banda.start, banda.endInclusive) +
+                    (profilo?.let { " (${it.nome}: vf=${it.vf} m/s, $dmin..$dmax m)" } ?: "")
+            )
+        }
 
         val iniziato = System.currentTimeMillis()
         val tiri = when (modo) {
-            Modo.TIRO -> analizzaPerTiro(file, useClicker, offsetMs)
-            Modo.CONTINUO -> analizzaContinuo(file, useClicker, offsetMs)
+            Modo.TIRO -> analizzaPerTiro(file, useClicker, offsetMs, riferimenti, banda)
+            Modo.CONTINUO -> analizzaContinuo(file, useClicker, offsetMs, banda)
         }
+        println("riferimenti: ${riferimenti.size}")
         println("analisi: ${tiri.size} rilevamenti in ${(System.currentTimeMillis() - iniziato) / 1000} s")
         println()
 
-        val report = confronta(tiri)
-        stampa(report)
-        dump?.let { scriviDump(it, tiri) }
+        stampa(confronta(tiri, riferimenti))
+    }
+
+    /**
+     * Gli scocchi di riferimento da una tabella CSV, nella colonna
+     * `inizio_scocco_s` (o la seconda, se manca l'intestazione). Serve per
+     * misurare sessioni diverse da quella dei quaranta tiri a 70 m.
+     */
+    fun leggiRiferimenti(file: File): DoubleArray {
+        val righe = file.readLines()
+            .map { it.removePrefix("\uFEFF") }
+            .filter { it.isNotBlank() }
+        val colonna = righe.firstOrNull()
+            ?.split(',')
+            ?.map { it.trim() }
+            ?.indexOf("inizio_scocco_s")
+            ?.takeIf { it >= 0 } ?: 1
+        val dati = if (righe.firstOrNull()?.toDoubleOrNull() == null) righe.drop(1) else righe
+        return dati.mapNotNull { it.split(',').getOrNull(colonna)?.trim()?.toDoubleOrNull() }
+            .toDoubleArray()
     }
 
     /**
      * Modalità prodotto: una sessione per tiro, aperta [PRE_ROLL_S] prima del
-     * riferimento e chiusa quando il motore ha finito o dopo [POST_ROLL_S].
+     *         riferimento e chiusa quando il motore ha finito o dopo [POST_ROLL_S].
      */
-    fun analizzaPerTiro(file: File, useClicker: Boolean, offsetMs: Float): List<Tiro> {
+    fun analizzaPerTiro(
+        file: File,
+        useClicker: Boolean,
+        offsetMs: Float,
+        riferimenti: DoubleArray = RIFERIMENTI,
+        banda: ClosedFloatingPointRange<Float>?
+    ): List<Tiro> {
         val wav = WavInput(file)
         val rate = wav.sampleRate
         val tiri = mutableListOf<Tiro>()
         val block = FloatArray(rate / 50)
-        RIFERIMENTI.forEach { riferimento ->
+        riferimenti.forEach { riferimento ->
             val analyzer = AcousticShotAnalyzer(rate)
-            val machine = ShotTimingMachine(config(rate))
+            val machine = ShotTimingMachine(config(rate, banda))
             machine.startListening(useClicker, offsetMs)
             machine.onStability(true)
             machine.arm(0)
@@ -188,11 +243,16 @@ object ShotAudioProbe {
     }
 
     /** Modalità severa: il file tutto d'un fiato, sessione nuova a ogni tiro. */
-    fun analizzaContinuo(file: File, useClicker: Boolean, offsetMs: Float): List<Tiro> {
+    fun analizzaContinuo(
+        file: File,
+        useClicker: Boolean,
+        offsetMs: Float,
+        banda: ClosedFloatingPointRange<Float>?
+    ): List<Tiro> {
         val wav = WavInput(file)
         val rate = wav.sampleRate
         val analyzer = AcousticShotAnalyzer(rate)
-        val machine = ShotTimingMachine(config(rate))
+        val machine = ShotTimingMachine(config(rate, banda))
 
         fun nuovaSessione() {
             machine.startListening(useClicker, offsetMs)
@@ -210,7 +270,6 @@ object ShotAudioProbe {
             machine.onProgress(analyzer.sampleIndex)
             if (machine.state.value.stage == ShotStage.READY) machine.arm(analyzer.sampleIndex)
             val state = machine.state.value
-            traccia(analyzer.sampleIndex, rate, state)
             if (state.isFinished) {
                 state.releaseIndex?.let { tiri += tiroDi(state, it, rate, 0.0) }
                 nuovaSessione()
@@ -220,31 +279,15 @@ object ShotAudioProbe {
         return tiri
     }
 
-    private var ultimoStato: ShotStage? = null
-
-    /** Traccia dei cambi di stato, solo quando serve a capire un mancato. */
-    private fun traccia(index: Long, rate: Int, state: com.miraglio.domain.audio.ShotTimingState) {
-        if (System.getProperty("shotProbeTrace") == null) return
-        if (state.stage == ultimoStato) return
-        ultimoStato = state.stage
-        println("  stato %.2f s: ${state.stage} release=${state.releaseIndex}".format(index.toDouble() / rate))
-    }
-
     private fun tiroDi(
-        state: com.miraglio.domain.audio.ShotTimingState,
+        state: ShotTimingState,
         releaseIndex: Long,
         rate: Int,
         inizioS: Double
-    ): Tiro {
-        val measurement = state.measurement
-        return Tiro(
-            releaseS = inizioS + releaseIndex.toDouble() / rate,
-            deltaS = measurement?.totalTimeS,
-            releaseAmpiezza = measurement?.releaseAmplitude ?: 0f,
-            impattoAmpiezza = measurement?.impactAmplitude,
-            tiroConcluso = state.stage == ShotStage.DONE
-        )
-    }
+    ): Tiro = Tiro(
+        releaseS = inizioS + releaseIndex.toDouble() / rate,
+        deltaS = state.measurement?.totalTimeS
+    )
 
     data class Riga(
         val indice: Int,
@@ -252,7 +295,6 @@ object ShotAudioProbe {
         val motoreS: Double?,
         val erroreMs: Double?,
         val deltaS: Float?,
-        val distanzaM: Float?,
         val agganciato: Boolean
     )
 
@@ -261,17 +303,15 @@ object ShotAudioProbe {
         val rilevamentiTotali: Int,
         val offsetMedianoMs: Double,
         val scartoMs: Double,
-        val deltaMedioS: Double,
-        val distanzaMediaM: Double
+        val deltaMedioS: Double
     ) {
         val agganciati: Int get() = righe.count { it.agganciato }
         val conDelta: Int get() = righe.count { it.deltaS != null }
     }
 
     /** Confronta i rilevamenti con i riferimenti e riassume. */
-    fun confronta(tiri: List<Tiro>): Report {
-        val usati = BooleanArray(tiri.size)
-        val righe = RIFERIMENTI.mapIndexed { indice, riferimento ->
+    fun confronta(tiri: List<Tiro>, riferimenti: DoubleArray = RIFERIMENTI): Report {
+        val righe = riferimenti.mapIndexed { indice, riferimento ->
             var migliore = -1
             var miglioreErrore = Double.MAX_VALUE
             tiri.forEachIndexed { i, tiro ->
@@ -282,23 +322,18 @@ object ShotAudioProbe {
                 }
             }
             val tiro = if (migliore >= 0 && miglioreErrore <= TOLLERANZA_S) tiri[migliore] else null
-            if (tiro != null) usati[migliore] = true
             Riga(
                 indice = indice + 1,
                 riferimentoS = riferimento,
                 motoreS = tiro?.releaseS,
                 erroreMs = tiro?.let { (it.releaseS - riferimento) * 1000.0 },
                 deltaS = tiro?.deltaS,
-                distanzaM = tiro?.deltaS?.let {
-                    BallisticCalculator.distance(it, MODELLO, airTempC = 20f)
-                },
                 agganciato = tiro != null
             )
         }
 
         val errori = righe.mapNotNull { it.erroreMs }
         val delta = righe.mapNotNull { it.deltaS }
-        val distanze = righe.mapNotNull { it.distanzaM }
         val mediana = errori.sorted().let {
             if (it.isEmpty()) 0.0
             else if (it.size % 2 == 1) it[it.size / 2]
@@ -312,31 +347,27 @@ object ShotAudioProbe {
             rilevamentiTotali = tiri.size,
             offsetMedianoMs = mediana,
             scartoMs = scarto,
-            deltaMedioS = if (delta.isEmpty()) 0.0 else delta.sumOf { it.toDouble() } / delta.size,
-            distanzaMediaM =
-                if (distanze.isEmpty()) 0.0
-                else distanze.sumOf { it.toDouble() } / distanze.size
+            deltaMedioS = if (delta.isEmpty()) 0.0 else delta.sumOf { it.toDouble() } / delta.size
         )
     }
 
     private fun stampa(report: Report) {
-        println("tiro  riferimento   motore    errore_ms   delta_s   distanza_m  esito")
+        println("tiro  riferimento   motore    errore_ms   delta_s  esito")
         report.righe.forEach { riga ->
             println(
-                "%4d  %11.2f  %9s  %9s  %7s  %10s  %s".format(
+                "%4d  %11.2f  %9s  %9s  %7s  %s".format(
                     riga.indice,
                     riga.riferimentoS,
                     riga.motoreS?.let { "%.2f".format(it) } ?: "-",
                     riga.erroreMs?.let { "%+.0f".format(it) } ?: "-",
                     riga.deltaS?.let { "%.3f".format(it) } ?: "-",
-                    riga.distanzaM?.let { "%.1f".format(it) } ?: "-",
                     if (riga.agganciato) "ok" else "MANCATO"
                 )
             )
         }
         println()
-        println("scocchi agganciati: ${report.agganciati}/${RIFERIMENTI.size}")
-        println("con impatto misurato: ${report.conDelta}/${RIFERIMENTI.size}")
+        println("scocchi agganciati: ${report.agganciati}/${report.righe.size}")
+        println("con impatto misurato: ${report.conDelta}/${report.righe.size}")
         println(
             "rilevamenti totali: ${report.rilevamentiTotali} " +
                 "(extra, cioe' parlato e rumore: ${report.rilevamentiTotali - report.agganciati})"
@@ -349,26 +380,8 @@ object ShotAudioProbe {
             "delta medio dei tiri agganciati: %.3f s (riferimento 1,445 s)"
                 .format(report.deltaMedioS)
         )
-        println("distanza media: %.1f m (attesa ~70 m)".format(report.distanzaMediaM))
         val mancati = report.righe.filter { !it.agganciato }.map { it.indice }
         if (mancati.isNotEmpty()) println("tiri non agganciati: ${mancati.joinToString(", ")}")
-    }
-
-    private fun scriviDump(file: File, tiri: List<Tiro>) {
-        file.bufferedWriter().use { out ->
-            out.write("release_s\tdelta_s\trelease_amp\timpatto_amp\tconcluso\n")
-            tiri.forEach { t ->
-                out.write(
-                    "%.3f\t%s\t%.3f\t%s\t%s\n".format(
-                        t.releaseS,
-                        t.deltaS?.toString() ?: "",
-                        t.releaseAmpiezza,
-                        t.impattoAmpiezza?.toString() ?: "",
-                        t.tiroConcluso
-                    )
-                )
-            }
-        }
     }
 
     /**

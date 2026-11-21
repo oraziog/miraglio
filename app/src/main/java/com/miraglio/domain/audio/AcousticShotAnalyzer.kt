@@ -1,15 +1,22 @@
 package com.miraglio.domain.audio
 
 /**
- * I due rami del filtro: acuto (scocco e rilascio) e grave (battifreccia).
+ * I rami del filtro: acuto (scocco e rilascio), grave (battifreccia) e il
+ * picco d'inviluppo lo+mid ([IMPACT_PEAK]).
  *
- * Stanno in un enum perché gli eventi dei due rami finiscono nella stessa
+ * Stanno in un enum perché gli eventi dei rami finiscono nella stessa
  * sequenza, e chi la legge deve poterli distinguere senza guardare
  * l'ampiezza: a 70 m l'impatto è più debole del rilascio, ma non sempre, e
  * affidarsi all'ampiezza per capire che cosa si è sentito sarebbe un
  * indovinello.
+ *
+ * [IMPACT_PEAK] non è un transiente triggerato: è il massimo locale
+ * dell'inviluppo delle due bande d'impatto, emesso anche quando il colpo è
+ * troppo quieto rispetto al fondo per far scattare il rilevatore grave (a
+ * 18 m il rapporto STA/LTA all'impatto vale 0,4). Vedi
+ * [BroadbandPeakDetector].
  */
-enum class ShotBranch { HIGH_BAND, LOW_BAND }
+enum class ShotBranch { HIGH_BAND, LOW_BAND, IMPACT_PEAK }
 
 /** Un transiente con l'etichetta del ramo che l'ha trovato. */
 data class AcousticEvent(
@@ -48,6 +55,7 @@ class AcousticShotAnalyzer(
         triggerRatio = config.triggerRatio.toDouble(),
         detriggerRatio = config.detriggerRatio.toDouble()
     )
+    private val peakDetector = BroadbandPeakDetector(sampleRateHz)
 
     /** Campioni consumati dall'ultimo [reset]: l'orologio del telemetro. */
     var sampleIndex: Long = 0L
@@ -58,6 +66,7 @@ class AcousticShotAnalyzer(
         lowFilter.reset()
         highDetector.reset()
         lowDetector.reset()
+        peakDetector.reset()
         sampleIndex = 0L
     }
 
@@ -69,19 +78,24 @@ class AcousticShotAnalyzer(
     fun processBlock(samples: FloatArray, length: Int = samples.size): List<AcousticEvent> {
         val highEvents = mutableListOf<TransientEvent>()
         val lowEvents = mutableListOf<TransientEvent>()
+        val peakEvents = mutableListOf<AcousticEvent>()
 
         for (i in 0 until length) {
             val sample = samples[i].toDouble()
-            highDetector.process(highFilter.process(sample), sampleIndex, highEvents)
-            lowDetector.process(lowFilter.process(sample), sampleIndex, lowEvents)
+            val mid = highFilter.process(sample)
+            val low = lowFilter.process(sample)
+            highDetector.process(mid, sampleIndex, highEvents)
+            lowDetector.process(low, sampleIndex, lowEvents)
+            peakDetector.process(low, mid, sampleIndex, peakEvents)
             sampleIndex++
         }
 
-        if (highEvents.isEmpty() && lowEvents.isEmpty()) return emptyList()
+        if (highEvents.isEmpty() && lowEvents.isEmpty() && peakEvents.isEmpty()) return emptyList()
 
         return buildList {
             highEvents.forEach { add(it.toAcoustic(ShotBranch.HIGH_BAND)) }
             lowEvents.forEach { add(it.toAcoustic(ShotBranch.LOW_BAND)) }
+            peakEvents.forEach { add(it) }
         }.sortedBy { it.endIndex }
     }
 

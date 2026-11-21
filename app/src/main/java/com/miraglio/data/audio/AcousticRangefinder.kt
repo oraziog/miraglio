@@ -6,7 +6,6 @@ import androidx.annotation.RequiresPermission
 import com.miraglio.domain.audio.AcousticShotAnalyzer
 import com.miraglio.domain.audio.ShotStage
 import com.miraglio.domain.audio.ShotTimingConfig
-import com.miraglio.domain.ballistics.BallisticCalculator
 import com.miraglio.domain.audio.ShotTimingMachine
 import com.miraglio.domain.audio.ShotTimingState
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -51,6 +50,12 @@ class AcousticRangefinder @Inject constructor(
      * ([com.miraglio.data.sensor.MotionMonitor]); [useClicker] e
      * [releaseOffsetMs] arrivano dal profilo arco.
      *
+     * [plausibleTotalTimeS] è la banda in cui un impatto è fisicamente
+     * possibile per questo arco: la deriva chi chiama dal profilo calibrato
+     * ([com.miraglio.domain.audio.ImpactPlausibility]). È obbligatoria e
+     * `null` significa "nessun veto", così nessun chiamante può ricadere su
+     * una finestra fissa che descrive solo i 70 m.
+     *
      * [onState] riceve ogni cambio di stato utile all'interfaccia — è pensato
      * per una callback veloce, non per lavoro pesante. [onLevel] riceve il
      * picco di ogni blocco letto, per il grafico della forma d'onda.
@@ -60,10 +65,9 @@ class AcousticRangefinder @Inject constructor(
         useClicker: Boolean,
         releaseOffsetMs: Float,
         stability: StateFlow<Boolean>,
+        plausibleTotalTimeS: ClosedFloatingPointRange<Float>?,
         sampleRateHz: Int = AudioCaptureSource.DEFAULT_SAMPLE_RATE,
         sessionTimeoutS: Double = DEFAULT_SESSION_TIMEOUT_S,
-        plausibleTotalTimeS: ClosedFloatingPointRange<Float>? =
-            BallisticCalculator.PLAUSIBLE_TOTAL_TIME_S,
         onState: (ShotTimingState) -> Unit = {},
         onLevel: (Float) -> Unit = {}
     ): ShotTimingState = withContext(Dispatchers.Default) {

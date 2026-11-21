@@ -245,8 +245,10 @@ dependencies {
 //   ffmpeg -i registrazione.mp3 -ac 1 -ar 48000 -sample_fmt s16 tiri.wav
 //   ./gradlew :app:analyzeShotAudio -Pwav=tiri.wav
 //
-// Facoltativi: -PuseClicker=false (senza clicker il primo picco è lo scocco)
-// e -PoffsetMs=150 (ritardo click->rilascio dichiarato nel profilo).
+// Facoltativi: -PuseClicker=false (senza clicker il primo picco è lo scocco),
+// -PoffsetMs=150 (ritardo click->rilascio dichiarato nel profilo),
+// -Pprofilo=70m|recurve|barebow|compound per la banda di plausibilità (senza
+// profilo il motore non applica il veto), con -Pdmin/-Pdmax facoltativi.
 // ---------------------------------------------------------------------------
 tasks.register<JavaExec>("analyzeShotAudio") {
     group = "verification"
@@ -259,11 +261,9 @@ tasks.register<JavaExec>("analyzeShotAudio") {
             layout.buildDirectory.dir("tmp/kotlin-classes/debugUnitTest")
         ) + configurations.getByName("debugUnitTestRuntimeClasspath")
     mainClass.set("com.miraglio.tools.ShotAudioProbe")
-    // Il file intero sta in memoria una volta sola, a blocchi: due gigabyte
-    // bastano per dodici minuti a 48 kHz anche con i buffer di lettura.
+    // La lettura è a blocchi, non tutto il file in memoria: due gigabyte
+    // lasciano margine per dodici minuti a 48 kHz.
     maxHeapSize = "2g"
-    providers.gradleProperty("dump").orNull?.let { systemProperty("shotProbeDump", it) }
-    if (providers.gradleProperty("trace").isPresent) systemProperty("shotProbeTrace", "1")
     argumentProviders.add(
         CommandLineArgumentProvider {
             listOf(
@@ -271,7 +271,10 @@ tasks.register<JavaExec>("analyzeShotAudio") {
                 providers.gradleProperty("modo").orNull ?: "tiro",
                 providers.gradleProperty("useClicker").orNull ?: "true",
                 providers.gradleProperty("offsetMs").orNull ?: "0",
-                providers.gradleProperty("plausibile").orNull ?: "1.0,2.0"
+                providers.gradleProperty("ref").orNull ?: "",
+                providers.gradleProperty("profilo").orNull ?: "",
+                providers.gradleProperty("dmin").orNull ?: "",
+                providers.gradleProperty("dmax").orNull ?: ""
             )
         }
     )

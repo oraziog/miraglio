@@ -1,111 +1,116 @@
 package com.miraglio.domain.audio
 
+import com.miraglio.domain.ballistics.ArrowSpeedModel
 import com.miraglio.domain.ballistics.BallisticCalculator
 import com.miraglio.tools.ShotAudioProbe
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
 
 /**
- * Un tiro vero, con la voce sopra: il caso più difficile che il motore
- * sbagliava, ritagliato da una registrazione di dodici minuti al campo.
- *
- * La finestra va da 140,0 a 146,0 s della registrazione originale (40 tiri a un
- * bersaglio a ~70 m, con il conduttore che parla sopra). Dentro c'è il click a
- * 1,50 s, lo scocco a 1,654 s e il battifreccia 1,442 s dopo. Il riferimento
- * del tiro è 141,65 s.
- *
- * **Perché questo.** È il caso che smascherava la scelta dell'impatto a
- * ampiezza: a 0,58 s dalla corda parte una parola forte 0,081 contro i 0,009
- * del battifreccia, e il motore la sceglieva — Δ 0,58 s, distanza 30 m invece
- * di 70. Adesso l'impatto si sceglie fra i transienti **a banda larga** (un
- * urto eccita anche l'acuto, una voce no), e questo tiro torna a 70 m.
- *
- * Il file è WAV mono 16 bit a 48 kHz, esattamente quello che esce dal telefono
- * a parte il rumore del convertitore: niente segnale sintetico.
+ * Tre tiri veri del file a 70 m, con la voce sopra, più due registrazioni di
+ * archi diversi: i casi più difficili che il motore sbagliava, ritagliati dalle
+ * registrazioni al campo. Ogni finestra è un WAV mono 16 bit a 48 kHz,
+ * esattamente quello che esce dal telefono a parte il rumore del convertitore:
+ * niente segnale sintetico. I test sintetici restano in [ShotTimingTest]; qui
+ * contano le registrazioni vere.
  */
 class RealRecordingTest {
 
     @get:Rule
     val temp = TemporaryFolder()
 
-    @Test
-    fun ilTiroVeroConLaVoceSopraTornaASettantaMetri() {
-        val file = temp.newFile("tiro_141_65.wav")
-        javaClass.getResourceAsStream("/audio/tiro_141_65.wav")!!.use { input ->
+    /**
+     * Fa passare la finestra [risorsa] per la pipeline e restituisce l'unico
+     * tiro che contiene. Se il motore ne trova zero o più d'uno il test
+     * fallisce qui, prima delle asserzioni sul tempo.
+     */
+    private fun unTiro(
+        risorsa: String,
+        useClicker: Boolean = true,
+        banda: ClosedFloatingPointRange<Float>? = BANDA_70M
+    ): ShotAudioProbe.Tiro {
+        val file = temp.newFile(risorsa)
+        javaClass.getResourceAsStream("/audio/$risorsa")!!.use { input ->
             file.outputStream().use { output -> input.copyTo(output) }
         }
-
-        val tiri = ShotAudioProbe.analizzaContinuo(file, useClicker = true, offsetMs = 0f)
-
-        assertEquals("la finestra contiene un solo tiro", 1, tiri.size)
-        val tiro = tiri.single()
-        assertEquals(
-            "lo scocco deve cadere dove l'ha visto chi ha misurato a mano",
-            1.654,
-            tiro.releaseS,
-            0.060
+        val tiri = ShotAudioProbe.analizzaContinuo(
+            file,
+            useClicker = useClicker,
+            offsetMs = 0f,
+            banda = banda
         )
-        val tempo = requireNotNull(tiro.deltaS) {
-            "il battifreccia è dentro la finestra: il delta deve esserci"
-        }
-        assertEquals(
-            "scocco -> impatto: è qui che la voce vinceva sull'impatto",
-            1.442,
-            tempo.toDouble(),
-            0.020
-        )
-
-        val distanza = requireNotNull(
-            BallisticCalculator.distance(tempo, ShotAudioProbe.MODELLO, airTempC = 20f)
-        ) { "il modello deve produrre una distanza" }
-        assertEquals("distanza ricavata dal tiro", 70.0, distanza.toDouble(), 1.5)
+        assertEquals("la finestra di $risorsa contiene un solo tiro", 1, tiri.size)
+        return tiri.single()
     }
 
     /**
-     * Il tiro 18 della stessa registrazione (finestra 234,0–240,0 s), il caso in
-     * cui la scelta dell'impatto produceva la distanza più assurda: **33,6 m**.
+     * Le tre cose che ogni tiro deve rispettare: lo scocco dove l'ha visto chi
+     * ha misurato a mano, il Δ giusto e la distanza del bersaglio, ricavata con
+     * il modello dell'arco che ha sparato.
+     */
+    private fun assertTiro(
+        risorsa: String,
+        scoccoS: Double,
+        deltaS: Double,
+        useClicker: Boolean = true,
+        banda: ClosedFloatingPointRange<Float> = BANDA_70M,
+        modello: ArrowSpeedModel = ShotAudioProbe.MODELLO,
+        distanzaM: Double = 70.0,
+        tolleranzaDistanza: Double = 1.5
+    ) {
+        val tiro = unTiro(risorsa, useClicker, banda)
+        assertEquals("lo scocco in $risorsa", scoccoS, tiro.releaseS, 0.060)
+
+        val delta = requireNotNull(tiro.deltaS) { "il battifreccia in $risorsa deve esserci" }
+        assertEquals("scocco -> impatto in $risorsa", deltaS, delta.toDouble(), 0.020)
+        assertTrue(
+            "la misura in $risorsa deve stare nella banda fisicamente possibile",
+            delta in banda
+        )
+
+        val distanza = requireNotNull(
+            BallisticCalculator.distance(delta, modello, airTempC = 20f)
+        ) { "il modello deve produrre una distanza" }
+        assertEquals("distanza ricavata in $risorsa", distanzaM, distanza.toDouble(), tolleranzaDistanza)
+    }
+
+    /**
+     * Tiro 11 (finestra 140,0–146,0 s): il caso che smascherava la scelta
+     * dell'impatto a ampiezza.
      *
-     * Il candidato colpevole è una sillaba a 0,652 s dalla corda, che è larga di
-     * banda quanto un urto; a 33 m però non c'è nessun bersaglio, e il tempo di
-     * volo lo dice. Il veto di plausibilità ([BallisticCalculator.
-     * PLAUSIBLE_TOTAL_TIME_S]) la scarta e l'impatto torna a 1,435 s, cioè 69,7 m.
+     * Dentro ci sono il click a 1,50 s, lo scocco a 1,654 s e il battifreccia
+     * 1,442 s dopo. A 0,58 s dalla corda parte una parola forte 0,081 contro i
+     * 0,009 del battifreccia, e il motore la sceglieva — Δ 0,58 s, distanza
+     * 30 m invece di 70. Adesso l'impatto si sceglie fra i transienti **a banda
+     * larga** (un urto eccita anche l'acuto, una voce no) e il tiro torna a
+     * 70 m.
+     */
+    @Test
+    fun ilTiroVeroConLaVoceSopraTornaASettantaMetri() {
+        assertTiro("tiro_141_65.wav", scoccoS = 1.654, deltaS = 1.442)
+    }
+
+    /**
+     * Tiro 18 (finestra 234,0–240,0 s), il caso in cui la scelta produceva la
+     * distanza più assurda: **33,6 m**.
+     *
+     * Il candidato colpevole è una sillaba a 0,652 s dalla corda, larga di
+     * banda quanto un urto. La banda derivata dal profilo (65–75 m) però a
+     * 33 m non lascia passare niente: il candidato viene scartato e l'impatto
+     * torna a 1,435 s, cioè 69,7 m.
      */
     @Test
     fun ilTiroVeroConLaDistanzaAssurdaTornaASettantaMetri() {
-        val file = temp.newFile("tiro_235_95.wav")
-        javaClass.getResourceAsStream("/audio/tiro_235_95.wav")!!.use { input ->
-            file.outputStream().use { output -> input.copyTo(output) }
-        }
-
-        val tiri = ShotAudioProbe.analizzaContinuo(file, useClicker = true, offsetMs = 0f)
-
-        assertEquals("la finestra contiene un solo tiro", 1, tiri.size)
-        val tiro = tiri.single()
-        assertEquals("lo scocco", 1.963, tiro.releaseS, 0.060)
-        val tempo = requireNotNull(tiro.deltaS) { "il battifreccia deve esserci" }
-        assertEquals(
-            "scocco -> impatto: la sillaba a 0,65 s non deve vincere",
-            1.435,
-            tempo.toDouble(),
-            0.020
-        )
-        assertTrue(
-            "la misura deve stare dentro la banda fisicamente possibile",
-            tempo in BallisticCalculator.PLAUSIBLE_TOTAL_TIME_S
-        )
-
-        val distanza = requireNotNull(
-            BallisticCalculator.distance(tempo, ShotAudioProbe.MODELLO, airTempC = 20f)
-        ) { "il modello deve produrre una distanza" }
-        assertEquals("distanza ricavata dal tiro", 70.0, distanza.toDouble(), 1.5)
+        assertTiro("tiro_235_95.wav", scoccoS = 1.963, deltaS = 1.435)
     }
 
     /**
-     * Il tiro 3 della registrazione (finestra 24,6–27,6 s), il caso in cui una
-     * frase prende il posto del click.
+     * Tiro 3 (finestra 24,6–27,6 s), il caso in cui una frase prende il posto
+     * del click.
      *
      * La registrazione, in quel punto, ha una sillaba a 24,802 s (0,006 di
      * acuto), il click del clicker a 25,161 (0,405) e lo scocco a 25,320
@@ -119,59 +124,85 @@ class RealRecordingTest {
      */
     @Test
     fun laFraseNonPrendeIlPostoDelClick() {
-        val file = temp.newFile("tiro_25_31.wav")
-        javaClass.getResourceAsStream("/audio/tiro_25_31.wav")!!.use { input ->
-            file.outputStream().use { output -> input.copyTo(output) }
-        }
-
-        val tiri = ShotAudioProbe.analizzaContinuo(file, useClicker = true, offsetMs = 0f)
-
-        assertEquals("la finestra contiene un solo tiro", 1, tiri.size)
-        val tiro = tiri.single()
-        assertEquals(
-            "lo scocco deve cadere dove l'ha visto chi ha misurato a mano",
-            0.720,
-            tiro.releaseS,
-            0.060
-        )
-        val tempo = requireNotNull(tiro.deltaS) { "il battifreccia deve esserci" }
-        assertEquals("scocco -> impatto, non click -> impatto", 1.438, tempo.toDouble(), 0.020)
-
-        val distanza = requireNotNull(
-            BallisticCalculator.distance(tempo, ShotAudioProbe.MODELLO, airTempC = 20f)
-        ) { "il modello deve produrre una distanza" }
-        assertEquals("distanza ricavata dal tiro", 70.0, distanza.toDouble(), 1.5)
+        assertTiro("tiro_25_31.wav", scoccoS = 0.720, deltaS = 1.438)
     }
 
     /**
-     * Il tiro 20 della registrazione (finestra 356,0–359,4 s), la sessione
-     * fantasma che non si riapriva.
+     * Barebow a 18 m (tiro 30 della registrazione, scocco a 849,715 s).
      *
-     * Una frase a 356,428 s (0,005) viene presa per click e la sua finestra
-     * sceglie come rilascio un'altra sillaba a 356,571 (0,012). Il tiro vero è
-     * però lì: click a 356,899 (0,251, cinquanta volte la frase) e scocco a
-     * 357,049 (0,733). Prima della riancoratura il motore restava agganciato
-     * alla frase e misurava dal click sbagliato; adesso il click vero riapre la
-     * finestra e lo scocco è quello giusto: Δ 1,437 s, 69,8 m.
+     * È il caso che la banda fissa non toccava: Δ 0,418 s sta **fuori** dalla
+     * vecchia 1,0–2,0 s, quindi il veto non si applicava e il motore poteva
+     * ripiegare su un transiente più tardi. La banda del profilo (51 m/s,
+     * campo 16–30 m) è 0,371–0,712 s, e il picco lo+mid dell'evento la
+     * rispetta. Il trigger grave qui non produce niente (STA/LTA 0,4): senza i
+     * picchi non ci sarebbe nessun candidato.
      */
     @Test
-    fun laSessioneFantasmaSiRiapreSulClickVero() {
-        val file = temp.newFile("tiro_357_05.wav")
-        javaClass.getResourceAsStream("/audio/tiro_357_05.wav")!!.use { input ->
-            file.outputStream().use { output -> input.copyTo(output) }
-        }
+    fun ilBarebowIndoorAVentottoMetriRecuperaLImpatto() {
+        val banda = bandaProfilo(51f, 0.002f, 16f, 30f)
+        assertFalse(
+            "la costante di prima non contiene un tiro a 18 m, la banda del profilo sì",
+            banda.contains(1.0f)
+        )
+        assertEquals("inizio della banda barebow", 0.371f, banda.start, 0.005f)
+        assertEquals("fine della banda barebow", 0.712f, banda.endInclusive, 0.010f)
+        assertTiro(
+            "barebow_18m_849.wav",
+            scoccoS = 0.815, // 849,715 s meno l'inizio della finestra (848,9 s)
+            deltaS = 0.418,
+            useClicker = false,
+            banda = banda,
+            modello = ArrowSense.BAREBOW.modello,
+            distanzaM = 18.0,
+            tolleranzaDistanza = 1.0
+        )
+    }
 
-        val tiri = ShotAudioProbe.analizzaContinuo(file, useClicker = true, offsetMs = 0f)
+    /**
+     * Compound a ~51 m (tiro 57, scocco a 1540,461 s): il caso in cui la
+     * vecchia scelta a ampiezza prendeva un'eco o una parola e finiva a 96 m.
+     *
+     * Con la banda del profilo (86 m/s, campo 15–90 m) e i picchi lo+mid il
+     * Δ torna 0,787 s contro i 0,787 misurati a mano, cioè 51,9 m sul modello
+     * dell'arco (la tabella dice 51,0 m).
+     */
+    @Test
+    fun ilCompoundASessantaMetriRecuperaLImpatto() {
+        assertTiro(
+            "compound_51m_1540.wav",
+            scoccoS = 0.801, // 1540,461 s meno l'inizio della finestra (1539,66 s)
+            deltaS = 0.787,
+            useClicker = false,
+            banda = bandaProfilo(86f, 0.001f, 15f, 90f),
+            modello = ArrowSense.COMPOUND.modello,
+            distanzaM = 51.0,
+            tolleranzaDistanza = 2.0
+        )
+    }
 
-        assertEquals("la finestra contiene un solo tiro", 1, tiri.size)
-        val tiro = tiri.single()
-        assertEquals("lo scocco", 1.049, tiro.releaseS, 0.060)
-        val tempo = requireNotNull(tiro.deltaS) { "il battifreccia deve esserci" }
-        assertEquals("scocco -> impatto", 1.437, tempo.toDouble(), 0.020)
+    /** I modelli dei due archi nuovi. */
+    private enum class ArrowSense(val modello: ArrowSpeedModel) {
+        BAREBOW(ArrowSpeedModel(51f, 0.002f)),
+        COMPOUND(ArrowSpeedModel(86f, 0.001f))
+    }
 
-        val distanza = requireNotNull(
-            BallisticCalculator.distance(tempo, ShotAudioProbe.MODELLO, airTempC = 20f)
-        ) { "il modello deve produrre una distanza" }
-        assertEquals("distanza ricavata dal tiro", 70.0, distanza.toDouble(), 1.5)
+    private fun bandaProfilo(vf: Float, decay: Float, dmin: Float, dmax: Float) =
+        requireNotNull(
+            ImpactPlausibility.band(
+                ArrowSpeedModel(vf, decay),
+                listOf(dmin, dmax),
+                airTempC = 20f
+            )
+        ) { "il profilo deve dare una banda" }
+
+    private companion object {
+        /** La banda dei tiri a 70 m, quella del profilo 65–75 m. */
+        val BANDA_70M = requireNotNull(
+            ImpactPlausibility.band(
+                ArrowSpeedModel(65f, 0.002f),
+                listOf(65f, 75f),
+                airTempC = 20f
+            )
+        )
     }
 }

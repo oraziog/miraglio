@@ -47,10 +47,13 @@ class ShotTimingTest {
     private fun run(
         samples: FloatArray,
         useClicker: Boolean,
-        releaseOffsetMs: Float = 0f
+        releaseOffsetMs: Float = 0f,
+        banda: ClosedFloatingPointRange<Float>? = null
     ): ShotTimingState {
         val analyzer = AcousticShotAnalyzer(sampleRate)
-        val machine = ShotTimingMachine(ShotTimingConfig(sampleRateHz = sampleRate))
+        val machine = ShotTimingMachine(
+            ShotTimingConfig(sampleRateHz = sampleRate, plausibleTotalTimeS = banda)
+        )
 
         machine.startListening(useClicker, releaseOffsetMs)
         machine.onStability(true)
@@ -275,6 +278,48 @@ class ShotTimingTest {
             70.0,
             distances.average(),
             0.5
+        )
+    }
+
+    /**
+     * La degradazione esplicita: **`null` vuol dire nessun veto**, non una
+     * finestra di ripiego.
+     *
+     * Lo stesso segnale ha un impatto a 1,700 s e un secondo urto più forte a
+     * 2,700 s. Con la banda 0,9–1,5 s il secondo è fuori e il motore misura
+     * 1,000 s; senza banda non c'è niente che lo escluda, e vince il più
+     * forte, a 2,000 s. È il comportamento che tocca a un profilo non
+     * calibrato, dove nessun numero inventato può dire quale dei due è il
+     * battifreccia.
+     */
+    @Test
+    fun senzaBandaIlMotoreNonApplicaIlVeto() {
+        val signal = SyntheticShot.signal(
+            sampleRateHz = sampleRate,
+            durationS = 3.6,
+            bursts = listOf(
+                SyntheticShot.Burst(atS = 0.700, freqHz = 4000.0, amplitude = 0.90f, lengthMs = 6.0),
+                SyntheticShot.Burst(atS = 1.700, freqHz = 300.0, amplitude = 0.45f, lengthMs = 25.0),
+                SyntheticShot.Burst(atS = 2.700, freqHz = 300.0, amplitude = 0.50f, lengthMs = 25.0)
+            )
+        )
+
+        val conBanda = run(throughWav(signal), useClicker = false, banda = 0.9f..1.5f)
+        assertEquals(ShotStage.DONE, conBanda.stage)
+        assertEquals(
+            "con la banda il secondo urto è fuori e resta l'impatto a 1,000 s",
+            1.000,
+            conBanda.measurement!!.totalTimeS.toDouble(),
+            0.005
+        )
+
+        val senzaBanda = run(throughWav(signal), useClicker = false)
+        assertEquals(ShotStage.DONE, senzaBanda.stage)
+        assertEquals(
+            "senza banda non c'è veto: vince il transiente più forte",
+            2.000,
+            senzaBanda.measurement!!.totalTimeS.toDouble(),
+            0.010
         )
     }
 
