@@ -62,9 +62,13 @@ jobs:
       - name: Tag e versione devono coincidere
         run: |
           TAG="${GITHUB_REF_NAME#v}"
-          VERSION="$(grep -oP 'versionName = "\K[^"]+' app/build.gradle.kts)"
+          # versionName e' un ternario: la build di prova aggiunge "(D3)", quella
+          # pubblicata e' il numero nudo. Il numero della release e' quindi
+          # l'ultimo X.Y.Z della riga di versionName, non la stringa intera.
+          VERSION="$(grep -oP '^\s*versionName\s*=.*' app/build.gradle.kts \
+            | grep -oP '[0-9]+\.[0-9]+\.[0-9]+' | tail -1)"
           echo "tag=$TAG  versionName=$VERSION"
-          if [ "$TAG" != "$VERSION" ]; then
+          if [ -z "$VERSION" ] || [ "$TAG" != "$VERSION" ]; then
             echo "::error::Il tag $GITHUB_REF_NAME non corrisponde a versionName $VERSION in app/build.gradle.kts: alza la versione e rifai il tag."
             exit 1
           fi
