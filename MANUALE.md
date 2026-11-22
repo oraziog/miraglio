@@ -502,7 +502,7 @@ essere **salvato come WAV** nella cartella che scegliete (o condiviso): il file
 non viene creato se non lo chiedete, quindi i tiri normali non occupano spazio.
 Con quel file si controlla cosa ha sentito il microfono, e lo stesso file si può
 far analizzare al banco di prova del progetto (vedi
-[README.md](README.md#analizzare-una-registrazione-reale-telemetro-acustico)).
+[ANALISI_TELEMETRO_ACUSTICO.md](ANALISI_TELEMETRO_ACUSTICO.md)).
 
 ### Consigli pratici
 
