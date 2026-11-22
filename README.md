@@ -101,6 +101,13 @@ qualcosa, e uno zoom 1×–8× mostra i due eventi. Il clicker lo riconosce da s
 quando non è dichiarato: la coppia click → corda è distinta da un tiro senza
 clicker, e la conferma arriva dall'impatto che cade nella banda fisica.
 
+![Schermata del telemetro: distanza, velocità, tempo di volo e forma d'onda con i marker di scocco e impatto](docs/img/telemetro-misura.png)
+
+*La scheda di misura del telefono con un tiro vero: distanza in verde, velocità
+della freccia, tempo di volo e, sotto, la forma d'onda — le due linee bianche
+segnano dove parte il cronometro (scocco) e dove si ferma (impatto), lo zoom a
+2× stringe la finestra invece dell'ampiezza.*
+
 **Verde, giallo, rosso** non sono una confidenza inventata, sono cose viste o
 non viste:
 
@@ -379,7 +386,7 @@ app/src/main/res/xml/locales_config.xml           # lingue dichiarate al sistema
 app/src/test/java/com/miraglio/                   # test: aggiornamento, invito, regole di misura, lingua, formattazione e telemetro
 app/src/test/resources/audio/                     # finestre WAV reali dei test del telemetro acustico
 app/src/test/screenshots/                         # PNG attesi degli screenshot test (versionati)
-docs/img/                                         # banner, infografica, icona e banner del telemetro
+docs/img/                                         # banner, infografica, icona, banner e schermata del telemetro
 .github/workflows/release.yml                    # tag -> APK firmato -> release
 .github/workflows/screenshots.yml                # push/PR -> confronto di tutti gli screenshot
 ```
@@ -410,7 +417,7 @@ docs/img/                                         # banner, infografica, icona e
 | Scambio calibrazione fra due telefoni (testo o QR) | ✅ Fatto — da provare su due telefoni dello stesso modello |
 | Verifica della focale importata (bersaglio noto, scarto oltre il 15%) | ✅ Fatto — da provare sul telefono |
 | Conferma aptica dei salvataggi | ✅ Fatto — da provare sul telefono |
-| Test automatici | ✅ Coprono aggiornamento, invito installazione, regole di misura, formattazione, parità di ogni traduzione col ripiego e la **pipeline del telemetro** su registrazioni vere (70 m, 18 m, 3 m, compound, barebow, le due 12.32 e le 19.21). In più gli **screenshot test** (Roborazzi): telemetro, grafico e pannello della calibrazione, pannello della misura, cronologia dei luoghi, card delle impostazioni — ogni disegno è confrontato pixel per pixel con il PNG in `app/src/test/screenshots/`, anche in CI. Totale: **280 test JVM** |
+| Test automatici | ✅ Coprono aggiornamento, invito installazione, regole di misura, formattazione, parità di ogni traduzione col ripiego e la **pipeline del telemetro** su registrazioni vere (70 m, 18 m, 3 m, compound, barebow, le due 12.32 e le 19.21). In più gli **screenshot test** (Roborazzi): telemetro, grafico e pannello della calibrazione, pannello della misura, cronologia dei luoghi, card delle impostazioni — ogni disegno è confrontato pixel per pixel con il PNG in `app/src/test/screenshots/`, anche in CI. Totale: **281 test JVM** |
 
 Note oneste:
 - La precisione senza calibrazione focale può essere peggiore del 30%: la guida

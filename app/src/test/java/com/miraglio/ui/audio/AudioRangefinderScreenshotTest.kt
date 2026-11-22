@@ -85,7 +85,11 @@ class AudioRangefinderScreenshotTest {
         report: ShotReport?,
         dark: Boolean = false,
         outdoor: Boolean = false,
-        stageText: String = "Misurato"
+        stageText: String = "Misurato",
+        waveform: List<Float> = emptyList(),
+        releaseMarker: Float? = null,
+        impactMarker: Float? = null,
+        zoom: Float = 1f
     ) {
         val format = DisplayFormat(Locale.ITALY, UnitSystem.METRIC)
         composeRule.setContent {
@@ -106,10 +110,10 @@ class AudioRangefinderScreenshotTest {
                                 hasProfile = true,
                                 canMeasure = true,
                                 hasMicrophone = true,
-                                waveform = emptyList(),
-                                releaseMarker = null,
-                                impactMarker = null,
-                                zoom = 1f,
+                                waveform = waveform,
+                                releaseMarker = releaseMarker,
+                                impactMarker = impactMarker,
+                                zoom = zoom,
                                 onStart = {},
                                 onStop = {},
                                 onZoom = {}
@@ -193,6 +197,40 @@ class AudioRangefinderScreenshotTest {
             outdoor = true
         )
         assertVisibile("Verde: impatto a banda larga dentro la finestra fisica.")
+    }
+
+    /**
+     * La scheda con la forma d'onda vera: i livelli letti dal microfono, le due
+     * linee del tiro (scocco e impatto) e lo zoom a 2×. È l'immagine che il
+     * README mostra per il telemetro, quindi deve contenere il grafico e non un
+     * rettangolo vuoto.
+     */
+    @Test
+    fun schedaConLaFormaDOnda() {
+        disegna(
+            "audio_rangefinder_waveform.png",
+            report(30f, ImpactEvidence.PEAK_IN_BAND, clicker = true),
+            waveform = formaDOnda(),
+            releaseMarker = 6f,
+            impactMarker = 66f,
+            zoom = 2f
+        )
+        assertVisibile("Livello microfono")
+        assertVisibile("Zoom: 2")
+    }
+
+    /**
+     * Una forma d'onda plausibile: silenzio di fondo, lo scocco forte e la sua
+     * coda che si spegne, poi l'impatto e il suo riverbero. Sono livelli fissi e
+     * non casuali, altrimenti il PNG atteso cambierebbe a ogni esecuzione.
+     */
+    private fun formaDOnda(): List<Float> = buildList {
+        repeat(120) { i ->
+            val fondo = 0.02f + 0.01f * (i % 3)
+            val scocco = if (i >= 6) 0.95f / (1f + (i - 6) * 0.45f) else 0f
+            val impatto = if (i >= 66) 0.80f / (1f + (i - 66) * 0.6f) else 0f
+            add((fondo + scocco + impatto).coerceIn(0f, 1f))
+        }
     }
 
     /** Nessun impatto: la scheda resta leggibile e non mostra una distanza. */
