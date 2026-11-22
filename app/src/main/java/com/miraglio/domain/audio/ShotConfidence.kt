@@ -10,9 +10,12 @@ package com.miraglio.domain.audio
  *   a banda larga **dentro** la banda fisica. Sono i due casi in cui il
  *   battifreccia ha una firma propria (un urto eccita anche l'acuto) e non è
  *   solo "il transiente grave più forte della finestra".
- * - [MEDIUM] — il numero esiste ma manca una delle due conferme: l'impatto è
- *   un grave senza acuto coincidente (poteva essere una voce), oppure la
- *   distanza esce dal campo dichiarato 5–50 m (il modello sta estrapolando).
+ * - [MEDIUM] — il numero esiste ma manca qualcosa: l'impatto è un grave senza
+ *   acuto coincidente (poteva essere una voce), oppure è un urto che cade
+ *   appena **oltre** il campo di calibrazione, dentro la sola tolleranza di
+ *   coda del picco d'inviluppo. Nel secondo caso il profilo dice che il tempo
+ *   è quello di un bersaglio un po' più lontano del campo misurato: la
+ *   distanza c'è, ma è una stima, non un valore dentro il campo.
  * - [LOW] — nessun candidato cadeva nella banda fisica e il motore ha ripiegato
  *   sul transiente più forte. Il numero c'è, ma è il ripiego: va guardato, non
  *   usato per decidere la tacca.
@@ -28,14 +31,17 @@ enum class ShotConfidence { HIGH, MEDIUM, LOW }
  * traduzione sta nelle risorse: il dominio non conosce la lingua dell'utente.
  */
 enum class ShotConfidenceReason {
-    /** Impatto a banda larga e distanza dentro il campo dichiarato. */
+    /** Impatto a banda larga dentro la finestra fisica. */
     OK,
 
     /** Impatto grave senza acuto coincidente: poteva essere rumore. */
     NO_BROADBAND_PROOF,
 
-    /** Distanza fuori dal campo 5–50 m: il modello sta estrapolando. */
-    OUT_OF_FIELD_RANGE,
+    /**
+     * Urto appena oltre il campo di calibrazione, preso per la coda del picco
+     * d'inviluppo: coerente con il profilo, ma fuori dal campo misurato.
+     */
+    IMPACT_JUST_OUTSIDE_FIELD,
 
     /** Nessun candidato nella banda fisica: la scelta è un ripiego. */
     IMPACT_OUT_OF_BAND
@@ -50,26 +56,17 @@ data class ShotQuality(
         /**
          * Il giudizio sul tiro appena misurato.
          *
-         * [fieldRangeM] è il campo in cui l'arciere sta tirando (5–50 m nel
-         * tiro di campagna), oppure `null` quando non ne è stato dichiarato
-         * nessuno: in quel caso non si può dire che la distanza sia "fuori
-         * campo", e la discriminante resta solo la prova dell'impatto.
-         *
          * L'ordine dei controlli è di gravità: prima il ripiego fuori banda,
-         * poi l'estrapolazione, poi la mancanza di prova a banda larga.
+         * poi la mancanza di prova a banda larga.
          */
-        fun evaluate(
-            distanceM: Float,
-            evidence: ImpactEvidence,
-            fieldRangeM: ClosedFloatingPointRange<Float>?
-        ): ShotQuality = when {
-            evidence == ImpactEvidence.OUT_OF_BAND ->
+        fun evaluate(evidence: ImpactEvidence): ShotQuality = when (evidence) {
+            ImpactEvidence.OUT_OF_BAND ->
                 ShotQuality(ShotConfidence.LOW, ShotConfidenceReason.IMPACT_OUT_OF_BAND)
 
-            fieldRangeM != null && distanceM.isFinite() && distanceM !in fieldRangeM ->
-                ShotQuality(ShotConfidence.MEDIUM, ShotConfidenceReason.OUT_OF_FIELD_RANGE)
+            ImpactEvidence.NEAR_BAND ->
+                ShotQuality(ShotConfidence.MEDIUM, ShotConfidenceReason.IMPACT_JUST_OUTSIDE_FIELD)
 
-            evidence == ImpactEvidence.LOW_IN_BAND ->
+            ImpactEvidence.LOW_IN_BAND ->
                 ShotQuality(ShotConfidence.MEDIUM, ShotConfidenceReason.NO_BROADBAND_PROOF)
 
             else -> ShotQuality(ShotConfidence.HIGH, ShotConfidenceReason.OK)

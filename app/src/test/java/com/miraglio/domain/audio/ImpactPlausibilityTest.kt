@@ -29,6 +29,33 @@ class ImpactPlausibilityTest {
         assertTrue("la banda deve contenere i tiri a 70 m", banda.contains(1.445f))
     }
 
+    /**
+     * In calibrazione non c'è ancora un modello, ma la distanza la scrive
+     * l'arciere: la banda esce da quella e dalle velocità possibili.
+     *
+     * A 5 m il battifreccia torna in ~0,107 s e deve stare dentro; l'onda della
+     * coda dello scocco a 0,040 s no (vorrebbe dire 125 m/s). A 18 m il tiro
+     * del 21/11/2026 vale 0,385 s e deve stare dentro, la coda a 0,055 s no.
+     */
+    @Test
+    fun laBandaDellaDistanzaNotaPrendeIlTiroEEscludeLaCoda() {
+        val cinque = requireNotNull(ImpactPlausibility.bandAtKnownDistance(5f, 20f))
+        assertTrue("0,107 s a 5 m", cinque.contains(0.107f))
+        assertTrue("la coda a 0,040 s non è un impatto", !cinque.contains(0.040f))
+        assertTrue("il rimbombo a 0,175 s resta possibile", cinque.contains(0.175f))
+
+        val diciotto = requireNotNull(ImpactPlausibility.bandAtKnownDistance(18f, 20f))
+        assertTrue("0,385 s a 18 m", diciotto.contains(0.385f))
+        assertTrue("la coda a 0,055 s non è un impatto", !diciotto.contains(0.055f))
+    }
+
+    @Test
+    fun laBandaDellaDistanzaNotaNonEsisteSenzaDistanza() {
+        assertNull(ImpactPlausibility.bandAtKnownDistance(0f, 20f))
+        assertNull(ImpactPlausibility.bandAtKnownDistance(-3f, 20f))
+        assertNull(ImpactPlausibility.bandAtKnownDistance(5f, Float.NaN))
+    }
+
     @Test
     fun ilBarebowIndoorNonStaNellaVecchiaCostante() {
         val banda = requireNotNull(
@@ -43,63 +70,6 @@ class ImpactPlausibilityTest {
             "la costante 1,0–2,0 non descrive un tiro a 18 m",
             !banda.contains(1.0f)
         )
-    }
-
-    /**
-     * Il tiro di campagna H&S: il bersaglio è a distanza sconosciuta fra 5 e
-     * 50 m, e chi ha calibrato l'arco a 15–25 m deve poter misurare anche un
-     * 45 m. La banda si allarga fino al campo dichiarato.
-     */
-    @Test
-    fun ilCampoDiCacciaApreLaBandaFinoACinquantaMetri() {
-        val modello = ArrowSpeedModel(muzzleSpeedMs = 65f, decayPerM = 0.002f)
-        val banda = requireNotNull(
-            ImpactPlausibility.band(
-                modello,
-                listOf(15f, 25f),
-                airTempC = 20f,
-                fieldRangeM = ImpactPlausibility.FIELD_RANGE_M
-            )
-        )
-        assertEquals(
-            BallisticCalculator.flightTime(5f, modello, 20f),
-            banda.start,
-            1e-4f
-        )
-        assertEquals(
-            BallisticCalculator.flightTime(50f, modello, 20f),
-            banda.endInclusive,
-            1e-4f
-        )
-        assertTrue(
-            "un 45 m deve stare nella finestra",
-            banda.contains(BallisticCalculator.flightTime(45f, modello, 20f))
-        )
-    }
-
-    /** Un profilo calibrato più lontano (65–75 m) allarga la banda, non la stringe. */
-    @Test
-    fun ilCampoDiCacciaNonStringeUnProfiloCalibratoPiuLontano() {
-        val modello = ArrowSpeedModel(muzzleSpeedMs = 65f, decayPerM = 0.002f)
-        val banda = requireNotNull(
-            ImpactPlausibility.band(
-                modello,
-                listOf(65f, 75f),
-                airTempC = 20f,
-                fieldRangeM = ImpactPlausibility.FIELD_RANGE_M
-            )
-        )
-        assertEquals(
-            BallisticCalculator.flightTime(5f, modello, 20f),
-            banda.start,
-            1e-4f
-        )
-        assertEquals(
-            BallisticCalculator.flightTime(75f, modello, 20f),
-            banda.endInclusive,
-            1e-4f
-        )
-        assertTrue("il tiro a 70 m resta dentro", banda.contains(1.445f))
     }
 
     @Test

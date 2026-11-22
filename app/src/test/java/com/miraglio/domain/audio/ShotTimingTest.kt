@@ -209,6 +209,39 @@ class ShotTimingTest {
     }
 
     /**
+     * In **calibrazione** la distanza è nota ma il modello no: la banda viene
+     * dalla distanza nota ([ImpactPlausibility.bandAtKnownDistance]) e il tiro
+     * corto si misura lo stesso.
+     *
+     * Senza banda la ricerca dell'impatto partiva da 0,15 s: a 5 m il
+     * battifreccia torna in 0,08–0,11 s e restava fuori, quindi il motore
+     * cronometrava il rimbombo successivo (0,175 s) e il modello calibrato
+     * usciva con metà della velocità vera.
+     *
+     * La banda però deve anche **escludere** l'onda della coda dello scocco: un
+     * candidato a 0,040 s cronometrerebbe 40 ms, che a 5 m vorrebbe dire 125
+     * m/s. Aprire la finestra a 0,02 s senza banda faceva proprio questo.
+     */
+    @Test
+    fun inCalibrazioneIlTiroCortoSiMisuraELaCodaNonConta() {
+        val signal = SyntheticShot.signal(
+            sampleRateHz = sampleRate,
+            durationS = 3.2,
+            bursts = listOf(
+                SyntheticShot.Burst(atS = 0.700, freqHz = 4000.0, amplitude = 0.90f, lengthMs = 6.0),
+                SyntheticShot.Burst(atS = 0.740, freqHz = 300.0, amplitude = 0.30f, lengthMs = 20.0),
+                SyntheticShot.Burst(atS = 0.807, freqHz = 300.0, amplitude = 0.45f, lengthMs = 25.0)
+            )
+        )
+
+        val banda = requireNotNull(ImpactPlausibility.bandAtKnownDistance(5f, 20f))
+        val state = run(throughWav(signal), useClicker = false, banda = banda)
+
+        assertEquals(ShotStage.DONE, state.stage)
+        assertEquals(0.107, state.measurement!!.totalTimeS.toDouble(), 0.005)
+    }
+
+    /**
      * La frase non è un click, anche se arriva prima: il click del clicker è di
      * un'altra classe di ampiezza e riapre la finestra dei 450 ms.
      *
@@ -399,6 +432,54 @@ class ShotTimingTest {
         assertEquals(
             "senza banda non c'è veto: vince il transiente più forte",
             2.000,
+            senzaBanda.measurement!!.totalTimeS.toDouble(),
+            0.010
+        )
+    }
+
+    /**
+     * La priorità nuova: **dentro il campo di calibrazione vince**, anche se
+     * l'urto fuori è più forte.
+     *
+     * Lo stesso segnale ha due attacchi: uno a 0,280 s dallo scocco, dentro la
+     * banda che finisce a 0,42 s, e uno a 0,430 s, appena oltre, quasi il
+     * doppio dell'ampiezza (0,55 contro 0,30). Senza banda vincerebbe il più
+     * forte e il tiro misurerebbe 0,430 s: è quello che succedeva prima, perché
+     * la tolleranza di coda era trattata come una banda qualsiasi. Adesso si
+     * sceglie 0,280 s, e la prova è [ImpactEvidence.PEAK_IN_BAND]: verde.
+     */
+    @Test
+    fun ilCandidatoDentroIlCampoVinceSuUnoPiuForteNellaCoda() {
+        val signal = SyntheticShot.signal(
+            sampleRateHz = sampleRate,
+            durationS = 3.2,
+            bursts = listOf(
+                SyntheticShot.Burst(atS = 0.700, freqHz = 4000.0, amplitude = 0.90f, lengthMs = 6.0),
+                SyntheticShot.Burst(atS = 0.980, freqHz = 300.0, amplitude = 0.30f, lengthMs = 25.0),
+                SyntheticShot.Burst(atS = 1.130, freqHz = 300.0, amplitude = 0.55f, lengthMs = 25.0)
+            )
+        )
+
+        // Il secondo urto a 0,430 s passa il veto solo grazie alla tolleranza di
+        // coda (0,42 + 0,04 = 0,46 s), quindi è proprio il caso da misurare.
+        val dentro = run(throughWav(signal), useClicker = false, banda = 0.22f..0.42f)
+
+        assertEquals(ShotStage.DONE, dentro.stage)
+        assertEquals(0.280, dentro.measurement!!.totalTimeS.toDouble(), 0.005)
+        assertEquals(
+            "un attacco dentro il campo deve restare verde anche se fuori ce n'è uno più forte",
+            ImpactEvidence.PEAK_IN_BAND,
+            dentro.measurement!!.evidence
+        )
+
+        // Senza banda non c'è priorità da rispettare: vince il più forte. Serve
+        // a provare che il candidato della coda è davvero quello più forte, e
+        // quindi che il test sopra non passa per caso.
+        val senzaBanda = run(throughWav(signal), useClicker = false)
+        assertEquals(ShotStage.DONE, senzaBanda.stage)
+        assertEquals(
+            "senza banda vince il più forte, cioè l'urto della coda",
+            0.430,
             senzaBanda.measurement!!.totalTimeS.toDouble(),
             0.010
         )

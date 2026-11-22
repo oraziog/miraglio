@@ -1,6 +1,7 @@
 package com.miraglio.tools
 
 import com.miraglio.domain.audio.AcousticShotAnalyzer
+import com.miraglio.domain.audio.ImpactEvidence
 import com.miraglio.domain.audio.ImpactPlausibility
 import com.miraglio.domain.audio.ShotStage
 import com.miraglio.domain.audio.ShotTimingConfig
@@ -96,7 +97,9 @@ object ShotAudioProbe {
 
     data class Tiro(
         val releaseS: Double,
-        val deltaS: Float?
+        val deltaS: Float?,
+        /** Su cosa si regge la scelta dell'impatto (verde/giallo/rosso). */
+        val evidence: ImpactEvidence? = null
     )
 
     /**
@@ -124,7 +127,11 @@ object ShotAudioProbe {
         "recurve" to Profilo("recurve", 60f, 0.001f, 15f, 70f),
         "compound" to Profilo("compound", 86f, 0.001f, 15f, 90f),
         // Il profilo dei quaranta tiri a 70 m: modello calibrato e campo 65–75.
-        "70m" to Profilo("70m", 65f, 0.002f, 65f, 75f)
+        "70m" to Profilo("70m", 65f, 0.002f, 65f, 75f),
+        // Il modello calibrato nella sessione delle 12.32 del 22/11/2026, con
+        // il campo 5–18 m: serve a rigiocare le registrazioni di quella
+        // sessione con la stessa banda che aveva l'app.
+        "1232" to Profilo("1232", 65.6f, 0.0150f, 5f, 18f)
     )
 
     private fun config(
@@ -246,7 +253,11 @@ object ShotAudioProbe {
 
             val inizioS = riferimento - PRE_ROLL_S
             wav.seekTo(inizioS * rate)
-            val fine = ((riferimento + POST_ROLL_S) * rate).toLong()
+            // `analyzer.sampleIndex` riparte da zero a ogni sessione: la fine va
+            // contata in campioni dall'inizio della sessione, non nel tempo
+            // assoluto del file. Con il tempo assoluto la sessione leggeva molto
+            // oltre i 2,6 s previsti e agganciava lo scocco successivo.
+            val fine = ((PRE_ROLL_S + POST_ROLL_S) * rate).toLong()
             while (analyzer.sampleIndex < fine) {
                 val count = wav.readBlock(block)
                 if (count <= 0) break
@@ -310,7 +321,8 @@ object ShotAudioProbe {
         inizioS: Double
     ): Tiro = Tiro(
         releaseS = inizioS + releaseIndex.toDouble() / rate,
-        deltaS = state.measurement?.totalTimeS
+        deltaS = state.measurement?.totalTimeS,
+        evidence = state.measurement?.evidence
     )
 
     data class Riga(
@@ -319,7 +331,8 @@ object ShotAudioProbe {
         val motoreS: Double?,
         val erroreMs: Double?,
         val deltaS: Float?,
-        val agganciato: Boolean
+        val agganciato: Boolean,
+        val prova: ImpactEvidence? = null
     )
 
     data class Report(
@@ -362,7 +375,8 @@ object ShotAudioProbe {
                 motoreS = tiro?.releaseS,
                 erroreMs = tiro?.let { (it.releaseS - riferimento) * 1000.0 },
                 deltaS = tiro?.deltaS,
-                agganciato = tiro != null
+                agganciato = tiro != null,
+                prova = tiro?.evidence
             )
         }
 
@@ -399,15 +413,16 @@ object ShotAudioProbe {
     }
 
     private fun stampa(report: Report) {
-        println("tiro  riferimento   motore    errore_ms   delta_s  esito")
+        println("tiro  riferimento   motore    errore_ms   delta_s  prova              esito")
         report.righe.forEach { riga ->
             println(
-                "%4d  %11.2f  %9s  %9s  %7s  %s".format(
+                "%4d  %11.2f  %9s  %9s  %7s  %-18s %s".format(
                     riga.indice,
                     riga.riferimentoS,
                     riga.motoreS?.let { "%.2f".format(it) } ?: "-",
                     riga.erroreMs?.let { "%+.0f".format(it) } ?: "-",
                     riga.deltaS?.let { "%.3f".format(it) } ?: "-",
+                    riga.prova?.name ?: "-",
                     if (riga.agganciato) "ok" else "MANCATO"
                 )
             )
@@ -421,9 +436,10 @@ object ShotAudioProbe {
         )
         report.extra.take(12).forEach { tiro ->
             println(
-                "  misura fuori tabella: scocco %.3f s, delta %.3f s".format(
+                "  misura fuori tabella: scocco %.3f s, delta %.3f s, prova %s".format(
                     tiro.releaseS,
-                    tiro.deltaS ?: 0f
+                    tiro.deltaS ?: 0f,
+                    tiro.evidence ?: "-"
                 )
             )
         }

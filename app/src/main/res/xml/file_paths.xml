@@ -12,4 +12,10 @@
     <cache-path
         name="apk_update"
         path="apk/" />
+    <!-- WAV delle sessioni audio, per la condivisione di debug: la cartella e'
+         privata dell'app, l'altra app riceve solo il content:// che le passa
+         il chooser. -->
+    <files-path
+        name="debug_audio"
+        path="debug_audio/" />
 </paths>

@@ -42,12 +42,19 @@ enum class ShotStage {
  *
  * Non è un dettaglio interno: è quello che permette di dire verde, giallo o
  * rosso senza inventare una confidenza. `PEAK_IN_BAND` e `BROADBAND_IN_BAND`
- * sono un urto (banda larga, o inviluppo delle due bande d'impatto);
- * `LOW_IN_BAND` è solo un tonfo grave, che potrebbe essere una voce;
- * `OUT_OF_BAND` è il ripiego fuori dalla finestra fisica.
+ * sono un urto **dentro** il campo di calibrazione (banda larga, o inviluppo
+ * delle due bande d'impatto); `NEAR_BAND` è lo stesso urto appena oltre, nella
+ * tolleranza di coda del picco d'inviluppo (vedi `BAND_PEAK_LAG_S`): la scelta
+ * resta guidata dal profilo, ma il tempo di volo del campo finisce prima, e il
+ * numero è una stima; `LOW_IN_BAND` è solo un tonfo grave, che potrebbe essere
+ * una voce; `OUT_OF_BAND` è il ripiego fuori dalla finestra fisica — o un
+ * attacco vero che cade oltre il campo di calibrazione: in quel caso la
+ * distanza è fuori dal campo misurato, ma l'urto è solido e va mostrato rosso,
+ * non sostituito da un'onda della coda che sta dentro il campo.
  */
 enum class ImpactEvidence {
     PEAK_IN_BAND,
+    NEAR_BAND,
     BROADBAND_IN_BAND,
     LOW_IN_BAND,
     OUT_OF_BAND
@@ -153,6 +160,10 @@ data class ShotTimingConfig(
      * implichi una distanza fuori dal campo di tiro non può essere il
      * battifreccia, per quanto somigli a un urto. `null` (nessuna calibrazione)
      * lascia il comportamento precedente.
+     *
+     * In coda il veto è più largo di [BAND_PEAK_LAG_S]: la banda è un tempo di
+     * volo, mentre la misura è il massimo dell'inviluppo lo+mid, che arriva
+     * sempre qualche decina di millisecondo dopo.
      */
     val plausibleTotalTimeS: ClosedFloatingPointRange<Float>? = null,
 
@@ -213,6 +224,7 @@ class ShotTimingMachine(
     private val releaseEndSamples = msToSamples(config.releaseWindowEndMs)
     private val slackSamples = msToSamples(config.resolutionSlackMs)
     private val broadbandSamples = msToSamples(BROADBAND_TOLERANCE_MS)
+    private val codaSamples = (RELEASE_CODA_S * samplesPerSecond).toLong()
 
     /**
      * Da dove si cerca l'impatto.
@@ -222,6 +234,12 @@ class ShotTimingMachine(
      * battifreccia in ~0,06 s, e una finestra che parte dopo non lo vedrebbe
      * mai. Il tetto resta `impactWindowStartS`, quindi a 70 m la ricerca parte
      * ancora da 0,15 s come prima.
+     *
+     * Senza banda resta il pavimento dei 0,15 s: aprirla a 0,02 s senza una
+     * banda che filtri i candidati faceva cronometrare l'onda della coda dello
+     * scocco (Δt 0,038–0,043 s sui tiri a 18 m del 21/11/2026). Chi conosce la
+     * distanza — la calibrazione — passa una banda anche senza modello (vedi
+     * `ImpactPlausibility.bandAtKnownDistance`).
      */
     private val impactSearchStartS: Float = config.plausibleTotalTimeS
         ?.let { banda ->
@@ -291,6 +309,29 @@ class ShotTimingMachine(
         if (_state.value.stage != ShotStage.READY) return
         highestIndex = maxOf(highestIndex, sampleIndex)
         _state.value = _state.value.copy(stage = ShotStage.ARMED)
+    }
+
+    /**
+     * Si riarma per il tiro successivo senza riaprire il microfono e senza
+     * ripassare dall'assestamento: il telefono è già fermo, l'unica cosa da
+     * buttare sono gli eventi del tiro appena concluso.
+     *
+     * [highestIndex] avanza al campione corrente, così [pruneEvents] scarta
+     * subito quello che era rimasto in coda (l'eco dell'impatto) e non può
+     * essere scambiato per il rilascio del tiro dopo. In automatico il clicker
+     * torna sconosciuto: il tiro nuovo va riconosciuto da capo.
+     */
+    fun rearm(sampleIndex: Long) {
+        if (clickerAuto) clicker = false
+        click = null
+        firstHigh = null
+        releaseCandidates = mutableListOf()
+        release = null
+        lowEvents = mutableListOf()
+        peakEvents = mutableListOf()
+        highEvents = mutableListOf()
+        highestIndex = maxOf(highestIndex, sampleIndex)
+        _state.value = ShotTimingState(ShotStage.ARMED, clickerUsed = clicker)
     }
 
     fun onEvent(event: AcousticEvent) {
@@ -685,9 +726,61 @@ class ShotTimingMachine(
         val banda = config.plausibleTotalTimeS
         fun plausibile(index: Long): Boolean {
             if (banda == null) return true
-            return (index - releaseIndex) / samplesPerSecond in banda
+            val delta = (index - releaseIndex) / samplesPerSecond
+            return delta >= banda.start && delta <= banda.endInclusive + BAND_PEAK_LAG_S
         }
         fun plausibile(evento: AcousticEvent): Boolean = plausibile(evento.peakIndex)
+
+        /**
+         * Vero quando il candidato sta **oltre** il tempo di volo più lungo
+         * del campo di calibrazione, cioè nella sola tolleranza di coda del
+         * picco d'inviluppo.
+         *
+         * La differenza non è cosmetica: dentro la banda l'impatto è quello
+         * che il profilo prevede (18 m di calibrazione, 18 m di misura); nella
+         * coda è un impatto che il profilo non copre e che si accetta solo
+         * perché il picco d'inviluppo arriva sempre dopo il tempo di volo. Per
+         * questo la misura resta valida ma diventa gialla.
+         *
+         * Un'eccezione: se il picco è un attacco e il suo fronte sta dentro la
+         * banda, il ritardo del massimo è spiegato e l'impatto è quello del
+         * campo (vedi [fronteInBanda]): resta verde.
+         */
+        fun oltreLaBanda(index: Long): Boolean {
+            val finestra = banda ?: return false
+            return (index - releaseIndex) / samplesPerSecond > finestra.endInclusive
+        }
+
+        /**
+         * Vero quando il **fronte** dell'attacco cade dentro il tempo di volo
+         * del campo, anche se il massimo dell'inviluppo lo supera.
+         *
+         * La banda del profilo è un tempo di volo, cioè quando l'onda arriva;
+         * la misura è il massimo dell'inviluppo lo+mid, che arriva sempre
+         * qualche decina di millisecondo dopo. Sui tiri dove quel ritardo
+         * portava il picco appena oltre la fine della banda (le due 12.32 del
+         * 22/11/2026: +7 e +19 ms, e il vero impatto veniva salvato solo dalla
+         * tolleranza di coda, quindi giallo) il fronte dice la verità fisica
+         * che il picco non può dire: l'urto **è cominciato** dentro il campo.
+         *
+         * Vale solo per i picchi che sono attacchi: un'onda della coda non ha
+         * un fronte, e per i transienti a banda larga l'informazione non c'è.
+         * Il tempo misurato non cambia — resta il massimo — così le distanze
+         * restano quelle del modello calibrato.
+         */
+        fun fronteInBanda(evento: AcousticEvent): Boolean {
+            val finestra = banda ?: return false
+            if (evento.branch != ShotBranch.IMPACT_PEAK || !evento.isAttack) return false
+            val delta = (evento.onsetIndex - releaseIndex) / samplesPerSecond
+            return delta >= finestra.start && delta <= finestra.endInclusive
+        }
+
+        /**
+         * Vero se il picco sta oltre la fine della banda ma il suo fronte è
+         * dentro: non è una stima da mostrare gialla, è l'impatto del campo.
+         */
+        fun accettatoDalFronte(evento: AcousticEvent): Boolean =
+            oltreLaBanda(evento.peakIndex) && fronteInBanda(evento)
 
         // 1. Picco d'inviluppo lo+mid nella banda: la misura più fine, perché
         //    l'inviluppo somma le due bande d'impatto invece di aspettare che
@@ -703,26 +796,64 @@ class ShotTimingMachine(
         //    spegne netto e l'onda a 0,15 s vale quanto l'impatto vero a 0,35 s,
         //    quindi due tiri su dieci misuravano 0,157 e 0,180 s (vedi
         //    [BroadbandPeakDetector]).
-        picchi
-            .filter { it.isAttack && plausibile(it) }
-            .maxByOrNull { it.peakAmplitude }
-            ?.let { return ImpactChoice(it, ImpactEvidence.PEAK_IN_BAND) }
+        //    Un attacco dentro il campo di calibrazione vale più di uno più
+        //    forte appena fuori: la coda è una stima, e va mostrata gialla.
+        scegliConPriorita(
+            candidati = picchi.filter { it.isAttack && (plausibile(it) || fronteInBanda(it)) },
+            forza = { it.peakAmplitude },
+            inCoda = { oltreLaBanda(it.peakIndex) && !accettatoDalFronte(it) },
+            evento = { it },
+            provaDentro = ImpactEvidence.PEAK_IN_BAND
+        )?.let { return it }
 
-        // 1b. Nessun attacco nella banda: si torna al picco più forte, come
+        // 1b. Nessun attacco dentro il campo: si torna al picco più forte, come
         //     prima. Serve ai casi in cui l'impatto è sepolto nel rumore e non
-        //     "salta" (il compound a 60 m: salita 1,9–3,4×, sotto il criterio):
-        //     meglio la misura di ieri che nessuna misura.
-        picchi
-            .filter { plausibile(it) }
-            .maxByOrNull { it.peakAmplitude }
-            ?.let { return ImpactChoice(it, ImpactEvidence.PEAK_IN_BAND) }
+        //     "salta" (il compound a 60 m: salita 1,9–3,4×, sotto il
+        //     criterio): meglio la misura di ieri che nessuna misura. Anche
+        //     qui, prima la banda.
+        val picco = scegliConPriorita(
+            candidati = picchi.filter { plausibile(it) || fronteInBanda(it) },
+            forza = { it.peakAmplitude },
+            inCoda = { oltreLaBanda(it.peakIndex) && !accettatoDalFronte(it) },
+            evento = { it },
+            provaDentro = ImpactEvidence.PEAK_IN_BAND
+        )
+        if (picco != null) {
+            // 1c. Ma se il picco scelto è un'**onda della coda dello scocco**
+            //     (non un attacco, nei primi [RELEASE_CODA_S]) e più tardi c'è
+            //     un attacco oltre la fine del campo, quello è l'impatto vero:
+            //     l'onda non può esserlo, perché è ancora la corda che suona.
+            //     Il tiro diventa rosso — la distanza cade fuori dal campo
+            //     calibrato — ma non verde a 5–6 m. È il caso delle 19.21 del
+            //     22/11/2026: rimbombo a 0,099 s, impatto a 0,395 s che sale di
+            //     venti volte, profilo tarato fino a 15 m; il motore misurava
+            //     0,099 s (5–6 m, oltre 210 km/h) con prova verde.
+            //     Solo gli attacchi **dopo** la banda: una voce che precede il
+            //     campo non deve battere un impatto che ci cade dentro (il
+            //     tiro 18 dei 70 m: sillaba a 0,652 s contro 1,435 s).
+            val coda = !picco.event.isAttack &&
+                picco.event.peakIndex - releaseIndex < codaSamples
+            if (coda) {
+                picchi
+                    .filter {
+                        it.isAttack && oltreLaBanda(it.peakIndex) &&
+                            !plausibile(it) && !fronteInBanda(it)
+                    }
+                    .maxByOrNull { it.peakAmplitude }
+                    ?.let { return ImpactChoice(it, ImpactEvidence.OUT_OF_BAND) }
+            }
+            return picco
+        }
 
         // 2. Nessun picco: banda larga **e** fisicamente possibile, il caso
         //    buono dei transienti triggerati (è quello che regge i 70 m).
-        conAcuto
-            .filter { plausibile(it.first) }
-            .maxByOrNull { (_, acuto) -> acuto.peakAmplitude }
-            ?.let { return ImpactChoice(it.first, ImpactEvidence.BROADBAND_IN_BAND) }
+        scegliConPriorita(
+            candidati = conAcuto.filter { plausibile(it.first) },
+            forza = { (_, acuto) -> acuto.peakAmplitude },
+            inCoda = { oltreLaBanda(it.first.peakIndex) },
+            evento = { it.first },
+            provaDentro = ImpactEvidence.BROADBAND_IN_BAND
+        )?.let { return it }
 
         // 3. Nessun picco: si ripiega su un grave plausibile, anche senza
         //    acuto coincidente.
@@ -738,6 +869,36 @@ class ShotTimingMachine(
             ?.let { return ImpactChoice(it.first, ImpactEvidence.OUT_OF_BAND) }
         return (candidati + picchi).maxByOrNull { it.peakAmplitude }
             ?.let { ImpactChoice(it, ImpactEvidence.OUT_OF_BAND) }
+    }
+
+    /**
+     * Il più forte fra i candidati già filtrati sulla plausibilità, ma prima
+     * quelli **dentro** il campo di calibrazione.
+     *
+              * È la regola che rende giallo invece di verde un impatto preso nella sola
+     * tolleranza di coda del picco d'inviluppo: se in banda c'è un attacco,
+     * anche più debole, vince lui, perché il tempo di volo del campo lo
+     * sostiene. Solo quando dentro non c'è niente si accetta la coda, e allora
+     * la prova è [ImpactEvidence.NEAR_BAND] a prescindere da [provaDentro].
+     *
+     * "Dentro" comprende chi si fa accettare dal proprio fronte
+     * ([accettatoDalFronte]): il massimo è in coda ma l'attacco è cominciato
+     * nel campo, quindi non è una stima.
+     *
+     * [inCoda] separa le due metà; [provaDentro] è la prova dei passi (picco
+     * d'inviluppo o banda larga) e resta l'unica differenza fra loro.
+     */
+    private fun <T> scegliConPriorita(
+        candidati: List<T>,
+        forza: (T) -> Float,
+        inCoda: (T) -> Boolean,
+        evento: (T) -> AcousticEvent,
+        provaDentro: ImpactEvidence
+    ): ImpactChoice? {
+        val (coda, dentro) = candidati.partition(inCoda)
+        dentro.maxByOrNull(forza)?.let { return ImpactChoice(evento(it), provaDentro) }
+        val tardo = coda.maxByOrNull(forza) ?: return null
+        return ImpactChoice(evento(tardo), ImpactEvidence.NEAR_BAND)
     }
 
     /**
@@ -828,10 +989,54 @@ class ShotTimingMachine(
         const val BAND_SEARCH_MARGIN_S = 0.02f
 
         /**
+         * Di quanto il picco d'inviluppo può cadere **dopo** il tempo di volo
+         * massimo della banda, senza per questo non essere il battifreccia.
+         *
+         * La banda del profilo è un tempo di volo; la misura è il massimo
+         * dell'inviluppo lo+mid, che arriva sempre un po' dopo, e che
+         * [BroadbandPeakDetector] emette solo alla fine di una finestra di
+         * 30 ms, tenendo il più forte dei massimi vicini (a volte quello che
+         * segue). Misurato: +8 ms mediani sui quaranta tiri a 70 m, +19 ms sui
+         * due tiri a 17–18 m delle 12.32 del 22/11/2026, fino ai +29 ms che la
+         * fusione dei due massimi (2,444 s e 2,472 s) introduce.
+         *
+         * Senza questa tolleranza il veto scartava il **vero** impatto per una
+         * ventina di millisecondi e lasciava vincere il rimbombo dell'arco
+         * nella scia dello scocco: quei tiri misuravano 5,5 e 6,8 m invece di
+         * 17–19 m. Il margine vale solo in coda: un picco d'inviluppo non può
+         * precedere il tempo di volo.
+         *
+         * La tolleranza resta anche ora che il **fronte** dell'attacco può
+         * farsi accettare dentro la banda ([fronteInBanda]): il fronte si
+         * conosce solo per i picchi che salgono di almeno 4× (il compound a
+         * 60 m sale di 1,9–3,4×, quindi ripiega sul massimo) e per niente
+         * affatto sui transienti a banda larga, che sono la scelta buona
+         * quando i picchi mancano. Per quelli il massimo resta l'unica
+         * informazione, e senza margine il vero impatto verrebbe scartato per
+         * una ventina di millisecondi.
+         */
+        const val BAND_PEAK_LAG_S = 0.04f
+
+        /**
          * Prima di questo istante dal rilascio un impatto non è separabile
          * dalla coda del rilascio stesso: è il pavimento della finestra.
          */
         const val MIN_IMPACT_SEARCH_START_S = 0.02f
+
+        /**
+         * Quanto vicino al rilascio un picco d'inviluppo è ancora la corda che
+         * suona e non un urto: 200 ms.
+         *
+         * Serve a distinguere l'onda della coda dello scocco da un impatto
+         * vero quando l'impatto cade fuori dal campo di calibrazione. Sui tiri
+         * a 18 m del 22/11/2026 il rimbombo sta a 87–99 ms dallo scocco e non
+         * sale di 4× (non è un attacco); l'onda più lontana misurabile è a
+         * 157–180 ms, quindi 200 ms li copre con margine. Un impatto a 5 m
+         * arriva a 88–105 ms, ma è un attacco: questa regola guarda solo i
+         * picchi che non salgono, e per quelli a quella distanza non c'è mai
+         * stato un impatto vero.
+         */
+        const val RELEASE_CODA_S = 0.20f
 
         /**
          * Quanto deve valere il secondo picco acuto per essere la corda che

@@ -31,7 +31,23 @@ data class AcousticEvent(
      * eventi dei rami triggerati non hanno questa informazione: restano a
      * `true` e la macchina non la guarda.
      */
-    val isAttack: Boolean = true
+    val isAttack: Boolean = true,
+    /**
+     * Per i soli picchi d'inviluppo: il fronte dell'attacco, cioè l'ultimo
+     * campione prima del massimo in cui l'inviluppo stava ancora sotto metà
+     * della salita (vedi [BroadbandPeakDetector]).
+     *
+     * Non è un doppione di [startIndex]: quello è il campione in cui il
+     * rilevatore ha cominciato a emettere l'evento, questo è il punto in cui
+     * l'urto si è fatto sentire. Serve alla plausibilità: la banda del profilo
+     * è un tempo di volo, quindi il fronte può stare dentro il campo mentre il
+     * massimo dell'inviluppo — che lo segue sempre di qualche decina di
+     * millisecondo — ne è già fuori.
+     *
+     * Vale [peakIndex] per le onde della coda (che non hanno un fronte) e per
+     * gli eventi dei rami triggerati.
+     */
+    val onsetIndex: Long = peakIndex
 )
 
 /**

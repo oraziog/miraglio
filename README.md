@@ -54,6 +54,68 @@ misura + coordinate), condivisibili come pin Google Maps, QR code o foto georefe
   ONNX è lazy e non viene caricato in memoria se non serve; riconoscimento una
   sola volta al fermo immagine, zero inferenza sull'anteprima
 
+### Telemetro acustico — la distanza dal tempo di volo
+
+![Banner del telemetro acustico: arco, telefono e bersaglio](docs/img/telemetro-banner.jpg)
+
+La fotocamera misura una distanza con la geometria; il **telemetro acustico** la
+misura col **suono**. Il microfono sente due eventi: lo **scocco** della corda e
+il **battifreccia** sul bersaglio. Il tempo fra i due è il tempo di volo; con il
+modello dell'arco — velocità di uscita `v0` e decadimento per metro `k`, ricavati
+dai tiri a distanza nota — diventa una **distanza in metri** e una **velocità in
+km/h**. Tutto sul telefono, senza rete: il microfono serve solo a datare i due
+suoni.
+
+**Il profilo arco.** Prima di misurare serve un profilo: il tipo di arco, se il
+clicker c'è (e di quanto il click precede lo scocco, di solito ~150 ms) e i
+tiri di **calibrazione guidata**. Si tira a distanze note — almeno due diverse,
+per esempio 5, 10, 15 e 18 m — e ogni tiro entra nel modello; l'app mostra il
+modello ottenuto e quanto i tiri stanno sulla curva, segnalando quelli da
+rifare. Senza due distanze diverse il pulsante di ascolto resta spento: una
+distanza inventata sarebbe peggio di nessuna distanza.
+
+**Come si usa.** Si entra in *Telemetro* e l'ascolto parte da solo (serve il
+permesso del microfono, chiesto lì e non all'avvio). Si appoggia il telefono
+fermo, con il microfono verso la linea di tiro o verso il bersaglio, e si tira.
+La schermata mostra **distanza**, **velocità** della freccia a quel bersaglio e
+il **tempo di volo**; la forma d'onda dice se il microfono sta sentendo
+qualcosa, e uno zoom 1×–8× mostra i due eventi. Il clicker lo riconosce da solo
+quando non è dichiarato: la coppia click → corda è distinta da un tiro senza
+clicker, e la conferma arriva dall'impatto che cade nella banda fisica.
+
+**Verde, giallo, rosso** non sono una confidenza inventata, sono cose viste o
+non viste:
+
+- **verde** — l'impatto è un attacco a banda larga **dentro** il campo di
+  calibrazione (o il suo fronte d'onda comincia dentro, anche se il massimo
+  dell'inviluppo lo supera di qualche millisecondo: l'inviluppo arriva sempre
+  un po' dopo il tempo di volo);
+- **giallo** — l'urto cade appena **oltre** il campo calibrato, nella tolleranza
+  di coda del picco d'inviluppo, oppure è un tonfo grave senza prova a banda
+  larga: il numero c'è, ma è una stima;
+- **rosso** — nessun candidato nel campo: la misura è un ripiego, oppure
+  l'impatto è un attacco vero ma **fuori** dal campo di calibrazione. In quel
+  caso il numero resta (con la distanza che il modello gli dà) e la distanza
+  **non** viene sostituita da un'onda della coda dello scocco che cadrebbe
+  dentro al campo: un rimbombo a 5–6 m non deve sembrare un tiro verde.
+
+**La velocità è quella del modello**, non un cronografo: a distanza breve una
+freccia veloce sta ancora a 200–220 km/h, e vederla scritta non è un errore.
+Quello che conta è la **distanza**, e la sua attendibilità è il colore.
+
+**Salvare l'audio.** L'ultimo tiro misurato può essere salvato come **WAV**
+nella cartella scelta (o condiviso): serve a controllare cosa ha sentito il
+microfono quando una misura non torna. Il file non viene scritto se non lo
+chiedi, e i tiri non salvati non occupano spazio.
+
+**Dove funziona meglio.** Telefono fermo e appoggiato, microfono a 1–3 m dalla
+linea di tiro, una freccia per volta, niente parlato sopra lo scocco. Il campo
+in cui la misura è verde è quello dei tiri di calibrazione: chi calibra fino a
+18 m e tira a 30 deve aspettarsi un numero rosso, non un verde sbagliato. Il
+motore è lo stesso che gira nei test sulle registrazioni vere: 39 tiri su 40 a
+70 m con la voce del conduttore sopra, 10 su 10 a 18 m in sala, 10 su 10 con il
+microfono a 3 m dalla linea.
+
 ### Verifica distanza (GPS)
 - **Partenza → cammina → arrivo**: distanza con Haversine, percorso a piedi
   cumulato, accuratezza dei fix mostrata in tempo reale
@@ -216,6 +278,8 @@ L'app si apre sulla schermata di **misura**; dal menu (☰) si raggiungono le al
 | Schermata | Percorso |
 |-----------|----------|
 | Misura (LINEE) | iniziale |
+| Telemetro acustico | menu → *Telemetro acustico* |
+| Calibrazione del telemetro | dal telemetro → *Calibra il profilo* |
 | Verifica distanza | menu → *Verifica distanza* |
 | Luoghi memorizzati | menu → *Luoghi memorizzati* |
 | Dettaglio luogo | da elenco luoghi |
@@ -251,6 +315,7 @@ L'app si apre sulla schermata di **misura**; dal menu (☰) si raggiungono le al
 ```
 app/src/main/java/com/miraglio/
 ├── data/
+│   ├── audio/         # AcousticRangefinder (microfono → macchina), ShotAudioRecorder (WAV)
 │   ├── camera/        # CameraService, MiraglioAnalyzer (fotogramma latest), BitmapConverter
 │   ├── focal/         # FocalCalibrationStore (punti fx/fy per lente)
 │   ├── location/      # LocationTracker (GPS + network)
@@ -263,6 +328,8 @@ app/src/main/java/com/miraglio/
 │   ├── update/        # GitHubReleasesClient, ApkDownloader, ApkInstaller, UpdateManager
 │   └── vision/        # YoloObjectDetector (ONNX), NoOpObjectDetector
 ├── domain/
+│   ├── audio/         # AcousticShotAnalyzer, BroadbandPeakDetector, ShotTimingMachine, ImpactPlausibility
+│   ├── ballistics/    # ArrowSpeedModel, BallisticCalculator (tempo di volo ↔ distanza)
 │   ├── camera/        # PinholeDistanceEstimator (d = K·f/pixel)
 │   ├── format/        # DisplayFormat (numeri e date nella lingua scelta)
 │   ├── location/      # GpsFix, Haversine, TargetEstimator (bersaglio stimato)
@@ -273,6 +340,7 @@ app/src/main/java/com/miraglio/
 ├── i18n/              # AppLanguage (lingua scelta + contesto localizzato), Texts + AndroidTexts
 ├── power/             # BackgroundPowerController (sensori/GPS in background)
 └── ui/
+    ├── audio/         # Telemetro: misura, calibrazione guidata, grafico, condivisione WAV
     ├── capture/       # Schermata misura (fermo immagine + linee + gesture)
     ├── measurement/   # Verifica distanza a piedi (GPS)
     ├── calibration/   # Elenco calibrazioni
@@ -290,16 +358,17 @@ app/src/main/res/values/                          # stringhe in inglese (ripiego
 app/src/main/res/values-it/                       # traduzione italiana
 app/src/main/res/values-es/                       # traduzione spagnola
 app/src/main/res/xml/locales_config.xml           # lingue dichiarate al sistema e al selettore in-app
-app/src/test/java/com/miraglio/                   # test: aggiornamento, invito, regole di misura, lingua e formattazione
+app/src/test/java/com/miraglio/                   # test: aggiornamento, invito, regole di misura, lingua, formattazione e telemetro
+app/src/test/resources/audio/                     # finestre WAV reali dei test del telemetro acustico
 app/src/test/screenshots/                         # PNG attesi degli screenshot test (versionati)
-docs/img/                                         # banner, infografica e icona usate nei documenti
+docs/img/                                         # banner, infografica, icona e banner del telemetro
 .github/workflows/release.yml                    # tag -> APK firmato -> release
 .github/workflows/screenshots.yml                # push/PR -> confronto di tutti gli screenshot
 ```
 
 ---
 
-## Stato corrente (v1.0.9, versionCode 10)
+## Stato corrente (v1.0.10, versionCode 11)
 
 | Funzione | Stato |
 |----------|-------|
@@ -312,6 +381,9 @@ docs/img/                                         # banner, infografica e icona 
 | Condivisione: messaggio + pin Maps + QR + foto con EXIF GPS | ✅ Funzionante |
 | Aggiornamento dall'app (GitHub Releases) | ✅ Funzionante — **provato sul telefono** |
 | Invito installazione (QR/link per un altro arciere) | ✅ Funzionante — **provato sul telefono** |
+| Telemetro acustico: profili arco, clicker automatico, calibrazione guidata, misura | ✅ Fatto — motore e schermata coperti da test su registrazioni vere; **da provare sul campo** |
+| Telemetro: esito verde/giallo/rosso, banda di plausibilità e fronte dell'attacco | ✅ Fatto — 39/40 tiri a 70 m, 10/10 a 18 m, 10/10 con il microfono a 3 m |
+| Telemetro: salva/condividi il WAV dell'ultimo tiro | ✅ Fatto — da provare sul telefono |
 | Lingua (italiano / spagnolo / inglese) e formattazione coerente | ✅ Fatto — il selettore in-app (Impostazioni → Lingua) è nuovo: da provare sul telefono |
 | Unità di misura (metriche / imperiali) | ✅ Fatto — scelta in Impostazioni, indipendente dalla lingua: da provare sul telefono |
 | Blocco rotazione (barra in alto + Impostazioni, default: verticale) | ✅ Fatto — da provare sul telefono |
@@ -320,7 +392,7 @@ docs/img/                                         # banner, infografica e icona 
 | Scambio calibrazione fra due telefoni (testo o QR) | ✅ Fatto — da provare su due telefoni dello stesso modello |
 | Verifica della focale importata (bersaglio noto, scarto oltre il 15%) | ✅ Fatto — da provare sul telefono |
 | Conferma aptica dei salvataggi | ✅ Fatto — da provare sul telefono |
-| Test automatici | ✅ Coprono aggiornamento, invito installazione, regole di misura, formattazione e parità di ogni traduzione col ripiego. In più gli **screenshot test** (Roborazzi): grafico e pannello della calibrazione, pannello della misura, cronologia dei luoghi, card delle impostazioni — ogni disegno è confrontato pixel per pixel con il PNG in `app/src/test/screenshots/`, anche in CI |
+| Test automatici | ✅ Coprono aggiornamento, invito installazione, regole di misura, formattazione, parità di ogni traduzione col ripiego e la **pipeline del telemetro** su registrazioni vere (70 m, 18 m, 3 m, compound, barebow, le due 12.32 e le 19.21). In più gli **screenshot test** (Roborazzi): telemetro, grafico e pannello della calibrazione, pannello della misura, cronologia dei luoghi, card delle impostazioni — ogni disegno è confrontato pixel per pixel con il PNG in `app/src/test/screenshots/`, anche in CI. Totale: **280 test JVM** |
 
 Note oneste:
 - La precisione senza calibrazione focale può essere peggiore del 30%: la guida
@@ -605,6 +677,46 @@ Test automatici: `tiri_3m_141.wav` (il tiro che sbagliava, ora a 0,388 s) e
 `tiri_3m_76.wav` in `RealRecordingTest`, con Δ atteso dalla tabella offline e
 tolleranza 40 ms.
 
+### La coda del picco e il fronte dell'attacco (le due regole del 22/11/2026)
+
+Il tempo che l'app misura è il **massimo** dell'inviluppo lo+mid, ma il tempo di
+volo del profilo finisce quando **arriva** l'onda. Il massimo arriva sempre
+qualche decina di millisecondo dopo: misurato su 40 tiri a 70 m, 5 ms in
+mediana e 9 ms al massimo (10° percentile 5, 90° 16). Per questo la banda porta
+la tolleranza di coda `BAND_PEAK_LAG_S` = **40 ms**: senza, il vero impatto
+veniva scartato per una ventina di millisecondi e vinceva il rimbombo (5,5 e
+6,8 m invece di 17–19).
+
+La regola nuova è più forte della tolleranza: se il **fronte** dell'attacco
+(dove l'inviluppo attraversa metà salita, 4–33 ms prima del massimo) cade dentro
+la banda, il picco viene accettato anche se sfora la coda, e resta **verde**.
+Il tempo misurato non cambia — resta il massimo — quindi le distanze restano
+quelle calibrate. Le due registrazioni delle 12.32 del 22/11/2026 (picco +7 e
++19 ms oltre la fine della banda, fronte dentro) sono il caso che lo fissa:
+senza la regola erano gialle, con la regola sono verdi a 18,7 e 18,3 m. Il
+fronte si conosce solo per i picchi che salgono di almeno 4× (a 60 m il compound
+sale di 1,9–3,4× e ripiega sul massimo) e non si conosce affatto per i
+transienti a banda larga: per quelli la tolleranza di coda resta indispensabile.
+
+La seconda regola riguarda il caso opposto: un **attacco vero oltre il campo di
+calibrazione** non deve essere sostituito da un'onda della coda che cade dentro
+il campo. Prima succedeva: sulla registrazione delle 19.21 del 22/11/2026 lo
+scocco è a 1,647 s, il rimbombo a ~1,75 s (salita 1,5×, quindi non un attacco) e
+il vero impatto a 2,039 s (attacco a banda larga, salita 20×, Δ 0,395 s = 17,4 m
+e 182 km/h). Con il profilo tarato fino a 15 m il 17,4 m cade fuori dalla banda,
+il motore scartava l'attacco e misurava il rimbombo: **0,099 s**, cioè 5–6 m e
+oltre 210 km/h, mostrati **verdi**. Ora un picco che non è un attacco e cade nei
+primi **200 ms** dallo scocco è riconosciuto come coda della corda, e se più
+tardi c'è un attacco oltre il campo vince quello: stesso Δ, 17,4 m, ma **rosso**
+perché fuori dal campo calibrato. Con un profilo che arriva a 18 m lo stesso
+tiro torna verde. Gli attacchi *prima* della banda restano esclusi: una voce a
+0,652 s non deve battere il battifreccia a 1,435 s (tiro 18 dei 70 m).
+
+Test: `ilFronteDellAttaccoRendeVerdiLeDueRegistrazioniDelleDodiciTrentadue`,
+`ilRimbomboNonPrendeIlPostoDellImpattoFuoriDalCampo` (con
+`tiri_1921_38.wav`, la registrazione vera) e i 70 m completi con
+`:app:analyzeImpactOnsetFull` (39/40, tutti verdi, margine minimo +107 ms).
+
 ---
 
 ## Pubblicare una nuova versione
@@ -623,7 +735,7 @@ a percorsi relativi: il corpo della release non è un file del repository, e un
 link relativo darebbe 404 proprio sulla pagina che deve installare l'app.
 
 1. Alza **`versionCode`** e **`versionName`** in [app/build.gradle.kts](app/build.gradle.kts)
-   (es. `versionCode = 9`, `versionName = "1.0.8"`).
+   (es. `versionCode = 12`, `versionName = "1.0.11"`).
 2. Committa e spingi il tag:
 
 ```bash
@@ -691,12 +803,6 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 adb shell am start -n com.miraglio/.MainActivity
 ```
 
-In alternativa i script `send_apk.cmd` / `send_apk.ps1` inviano al telefono
-l'APK **piu' recente** fra debug e release, via [croc](https://getcroc.com),
-mostrando un QR code col link di ricezione e dicendo quale dei due ha scelto.
-Per forzare uno dei due: `send_apk.ps1 -Variante debug` (o `release`); con
-`-Prova` si vede solo cosa invierebbe, senza inviare niente.
-
 Una volta pubblicata, la release si può installare anche a mano (utile la prima
 volta, o per rimediare a un'installazione andata male): l'APK è allegato alla
 release più recente su <https://github.com/oraziog/miraglio/releases>.
@@ -722,14 +828,14 @@ Audio", non all'avvio, e l'app funziona identica senza
 
 ## Roadmap
 
-- [ ] Telemetro acustico (in corso): distanza dal tempo di volo misurato col
-  microfono. Motore DSP, stabilità del telefono, profili arco, modello
-  balistico, schermata di misura (stato della macchina a stati, Δt, distanza,
-  velocità, forma d'onda con zoom 1×–8×) e calibrazione guidata sono
-  implementati e coperti da test JVM. Manca la validazione sul campo:
-  accuratezza a 70 m, offset reale del clicker, comportamento con vento e
-  rumore di fondo. Specifica in
-  [`ARCHERY_AUDIO_RANGEFINDER_SPEC.md`](ARCHERY_AUDIO_RANGEFINDER_SPEC.md)
+- [x] Telemetro acustico: distanza dal tempo di volo misurato col microfono.
+  Motore DSP, profili arco, modello balistico, clicker automatico, schermata di
+  misura (stato della macchina a stati, Δt, distanza, velocità, forma d'onda con
+  zoom 1×–8×), calibrazione guidata, esito verde/giallo/rosso e salvataggio del
+  WAV. Specifica in
+  [`ARCHERY_AUDIO_RANGEFINDER_SPEC.md`](ARCHERY_AUDIO_RANGEFINDER_SPEC.md).
+- [ ] Telemetro acustico, validazione sul campo: accuratezza a 70 m, offset
+  reale del clicker, comportamento con vento e rumore di fondo
 - [ ] Test automatici (unit/UI) sui calcoli di distanza e condivisione
 - [ ] Validazione sul campo della calibrazione contro distanze note
 - [ ] Quantizzazione del modello ONNX (APK più leggera, inferenza più rapida)
@@ -793,6 +899,12 @@ both systems.
   the frame, then put two lines on the target edges: the distance is recomputed
   live while you drag them. You type the real height in cm (no presets) and the
   app compensates the lens zoom by itself.
+- **Acoustic rangefinder.** A second way to measure, from sound instead of
+  geometry: the microphone dates the bow release and the arrow hitting the
+  target, the flight time is turned into metres and km/h by a per-bow model
+  built from shots at known distances, and the result is green, amber or red
+  depending on whether the impact falls inside the calibrated field. It runs
+  offline, records nothing and saves the shot audio only when you ask.
 - **Rotation lock.** Portrait by default, so the phone does not spin while you
   aim: one tap in the top bar lets it rotate, and the choice sticks. It applies
   only inside Miraglio, it is not a system setting.

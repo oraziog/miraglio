@@ -29,6 +29,7 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
@@ -131,6 +132,19 @@ fun AudioCalibrationScreen(
             }
 
             AudioSection(title = stringResource(R.string.audio_calibration_step_points)) {
+                // Il grafico sta sopra la lista: è la lettura d'insieme dei
+                // tiri, e la lista sotto serve ad agire su quello sbagliato.
+                val curve = remember(state.shots) { audioCalibrationCurve(state.shots) }
+                if (curve != null) {
+                    AudioCalibrationChart(
+                        curve = curve,
+                        onRedoDistance = { punto ->
+                            // Il campo parla in metri (la sua etichetta lo dice)
+                            // e "Misura il tiro" riparte da lì.
+                            viewModel.setDistance(plainNumber(punto.distanceM))
+                        }
+                    )
+                }
                 if (state.shots.isEmpty()) {
                     Text(
                         text = stringResource(R.string.audio_calibration_no_shots),
@@ -175,6 +189,8 @@ fun AudioCalibrationScreen(
                     )
                 }
             }
+
+            state.debugAudioPath?.let { path -> DebugAudioCard(path = path) }
         }
     }
 
@@ -278,4 +294,10 @@ private fun noticeText(
 
     AudioCalibrationViewModel.Notice.CAPTURE_FAILED ->
         stringResource(R.string.audio_calibration_capture_failed)
+
+    AudioCalibrationViewModel.Notice.TIMED_OUT ->
+        stringResource(
+            R.string.audio_calibration_session_timeout,
+            com.miraglio.data.audio.AcousticRangefinder.DEFAULT_SESSION_TIMEOUT_S.toInt()
+        )
 }

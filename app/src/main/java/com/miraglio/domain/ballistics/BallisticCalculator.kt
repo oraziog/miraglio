@@ -175,15 +175,22 @@ object BallisticCalculator {
 
         val slope = (n * sumXY - sumX * sumY) / denominator
         val intercept = (sumY - slope * sumX) / n
-        val muzzle = exp(intercept)
-        if (!muzzle.isFinite() || muzzle <= 0.0) return null
 
         // Una pendenza positiva direbbe che la freccia accelera: è rumore del
-        // fit, non fisica. Si blocca a zero (velocità costante) invece di
-        // restituire un modello che peggiora le misure.
+        // fit, non fisica. Si blocca il decadimento a zero (velocità costante)
+        // — ma allora `v0` **non** è più l'intercetta della retta: quella è il
+        // valore estrapolato a 0 m, che con i punti reali del 21/11/2026
+        // (tre tiri a 5 m e uno a 10 m, con i 5 m sbagliati di 70 ms) usciva
+        // 17,4 m/s contro i 54 misurati a 18 m, e ogni tiro a 18 m tornava
+        // "circa sei metri". Con `k = 0` la costante dei minimi quadrati è la
+        // media geometrica delle velocità misurate: è quella che si usa.
+        val decay = (-slope).coerceAtLeast(0.0)
+        val muzzle = if (decay > 0.0) exp(intercept) else exp(sumY / n)
+        if (!muzzle.isFinite() || muzzle <= 0.0) return null
+
         return ArrowSpeedModel(
             muzzleSpeedMs = muzzle.toFloat(),
-            decayPerM = (-slope).coerceAtLeast(0.0).toFloat()
+            decayPerM = decay.toFloat()
         )
     }
 

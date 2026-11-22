@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
@@ -28,6 +29,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -35,6 +37,7 @@ import com.miraglio.R
 import com.miraglio.data.profile.BowProfile
 import com.miraglio.data.weather.TemperatureSource
 import com.miraglio.domain.audio.ShotStage
+import java.io.File
 
 /** Card con titolo, usata da entrambe le schermate. */
 @Composable
@@ -157,6 +160,86 @@ private fun NewProfileDialog(
             }
         }
     )
+}
+
+/**
+ * La registrazione dell'ultima sessione, con il pulsante per condividerla.
+ *
+ * Compare solo quando un WAV esiste davvero: in questa fase di messa a punto
+ * serve a mandare l'audio di un tiro che non torna, senza cavi né cartelle da
+ * cercare sul telefono.
+ */
+@Composable
+fun DebugAudioCard(path: String) {
+    val context = LocalContext.current
+    val file = remember(path) { File(path) }
+    if (!file.exists()) return
+
+    AudioSection(title = stringResource(R.string.audio_debug_audio_title)) {
+        Text(
+            text = stringResource(R.string.audio_debug_audio_body),
+            style = MaterialTheme.typography.bodySmall
+        )
+        Text(
+            text = file.name,
+            style = MaterialTheme.typography.bodySmall,
+            fontWeight = FontWeight.Medium
+        )
+        Button(onClick = { AudioDebugShare.share(context, file) }) {
+            Text(stringResource(R.string.audio_debug_audio_share))
+        }
+    }
+}
+
+/**
+ * L'audio dell'ultimo tiro, con il pulsante che lo scrive su disco.
+ *
+ * Finché l'utente non sceglie una cartella il WAV non esiste: la misura tiene
+ * solo i campioni in memoria (pochi secondi, buffer circolare) e li butta via
+ * col tiro successivo. È il compromesso chiesto per il debug: nessun file
+ * accumulato per tiri che non interessano, ma la possibilità di riascoltare
+ * quello che non torna.
+ *
+ * La condivisione non richiede il salvataggio: il WAV viene scritto in cache
+ * solo per il tempo del chooser, così si può mandare subito il tiro a chi lo
+ * deve ascoltare senza scegliere prima una cartella.
+ */
+@Composable
+fun PendingAudioCard(
+    savedName: String?,
+    failed: Boolean,
+    onSave: () -> Unit,
+    onShare: () -> Unit
+) {
+    AudioSection(title = stringResource(R.string.audio_save_audio_title)) {
+        Text(
+            text = stringResource(R.string.audio_save_audio_body),
+            style = MaterialTheme.typography.bodySmall
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            if (savedName == null) {
+                Button(onClick = onSave) {
+                    Text(stringResource(R.string.audio_save_audio_action))
+                }
+            }
+            OutlinedButton(onClick = onShare) {
+                Text(stringResource(R.string.audio_save_audio_share))
+            }
+        }
+        if (savedName != null) {
+            Text(
+                text = stringResource(R.string.audio_save_audio_done, savedName),
+                style = MaterialTheme.typography.bodySmall
+            )
+        }
+        if (failed) {
+            Text(
+                text = stringResource(R.string.audio_save_audio_failed),
+                color = MaterialTheme.colorScheme.error,
+                style = MaterialTheme.typography.bodySmall
+            )
+        }
+    }
 }
 
 /** Il testo dello stato della macchina a stati, come lo vede l'arciere. */

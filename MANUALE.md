@@ -414,6 +414,118 @@ solo sul tuo telefono*).
 
 ---
 
+## Telemetro acustico — la distanza dal suono
+
+![Banner del telemetro acustico](docs/img/telemetro-banner.jpg)
+
+Il telemetro acustico misura la distanza **senza inquadrare niente**: ascolta il
+**suono**. Il microfono sente lo scocco della corda e il rumore della freccia che
+arriva sul bersaglio; il tempo fra i due è il tempo di volo, e dal modello del
+vostro arco diventa metri. È la stessa misura che fa la fotocamera, ma con un
+altro principio: la fotocamera misura una geometria, il telefono misura un tempo.
+
+Serve il **permesso del microfono**, chiesto quando si apre il telemetro e non
+all'avvio dell'app. L'audio non viene registrato né inviato da nessuna parte:
+serve solo a datare i due eventi, e l'app funziona identica senza.
+
+### Prima di misurare: il profilo arco
+
+Il telefono non sa quanto è veloce il vostro arco. Glielo si insegna con un
+profilo:
+
+1. **Profilo arco** → *Nuovo profilo*, con un nome che riconoscete (per esempio
+   *Olimpico 36#*).
+2. Dite se usate il **clicker**. Se sì, indicate di quanto il click precede lo
+   scocco (di solito **150 ms**): così il cronometro parte dal rilascio vero e
+   non dal click.
+3. **Calibrate il profilo** con la *calibrazione guidata*: tirate a distanze
+   note, almeno **due diverse**. Vanno benissimo 5, 10, 15 e 18 m. Per ogni
+   tiro scrivete la distanza, premete il pulsante e tirate una freccia: il
+   telefono misura il tempo e lo aggiunge alla curva.
+
+La schermata della calibrazione mostra il **modello** ottenuto (`v0` in m/s e il
+decadimento per metro), il grafico dei tiri e i punti **fuori curva**, con il
+pulsante per rifare quella misura. Un punto sbagliato sposta il modello per
+tutti i tiri: se l'app ve lo segnala, rifatelo. Con una sola distanza il modello
+non esiste e il pulsante di ascolto resta spento — è voluto, una distanza
+inventata sarebbe peggio di nessuna distanza.
+
+### Misurare
+
+1. Aprite **Telemetro acustico**: l'ascolto parte da solo (se avete premuto
+   *Ferma*, premete *Riprendi ascolto*).
+2. Appoggiate il telefono **fermo**, con il microfono verso la linea di tiro o
+   verso il bersaglio, a **1–3 m dalla linea**: più vicino sentite meglio la
+   corda, più lontano sentite meglio il bersaglio, e in mezzo si sentono bene
+   entrambi.
+3. Tirate una freccia. La schermata mostra **distanza**, **velocità** e **tempo di
+   volo**, più l'esito colorato e il clicker riconosciuto o no.
+4. La **forma d'onda** dice se il microfono sta sentendo qualcosa: se resta
+   piatta mentre tirate, il problema è il microfono (posizione, custodia,
+   permesso), non le soglie. Lo **zoom 1×–8×** allarga i due eventi.
+
+Il telefono riconosce da solo se c'è il clicker: la sequenza click → corda è
+distinta da un tiro senza clicker, e la conferma arriva dall'impatto che cade
+nella finestra fisica. Se il profilo dichiara il clicker, il motore usa la
+sequenza già nota.
+
+### Leggere il risultato: verde, giallo, rosso
+
+Il colore non è una confidenza inventata: dice **dove** è caduto l'impatto
+rispetto al campo su cui avete calibrato.
+
+| Colore | Cosa vuol dire | Cosa fare |
+|---|---|---|
+| 🟢 **Verde** | L'impatto è un urto a banda larga **dentro** il campo di calibrazione. Vale anche se il massimo dell'inviluppo sfora di qualche millisecondo la fine del campo: conta il **fronte** dell'attacco, che comincia dentro. | Usate il numero. |
+| 🟡 **Giallo** | L'urto cade **appena oltre** il campo (nella tolleranza di coda dell'inviluppo), oppure è un tonfo grave senza conferma acuta. | Il numero c'è, ma è una stima: se potete, rimisurate o allargate la calibrazione. |
+| 🔴 **Rosso** | Nessun candidato nel campo, oppure un attacco vero **fuori** dal campo di calibrazione. | Non usate il numero per la tacca. Se tirate spesso a quella distanza, aggiungetela alla calibrazione. |
+
+Due cose che sorprendono e non sono errori:
+
+- **La velocità può superare i 200 km/h.** È la velocità che il *vostro* modello
+  attribuisce alla freccia a quella distanza, non una misura da cronografo. A
+  distanza breve una freccia veloce è ancora a 200–220 km/h.
+- **Oltre il campo calibrabile il tiro diventa rosso.** Il campo è quello dei
+  tiri di calibrazione: chi calibra fino a 18 m e tira a 30 deve aspettarsi un
+  numero rosso, non un verde sbagliato. Se tirate più lontano, aggiungete una
+  misura a quella distanza.
+
+Il motore non ripiega su un'onda della coda dello scocco quando l'impatto vero
+cade appena fuori dal campo: in quel caso mostra l'attacco vero, **rosso**, con
+la distanza che il modello gli dà (per esempio 17,4 m invece di 5–6 m). Un
+rimbombo non deve sembrare un tiro verde.
+
+### Salvare l'audio di un tiro
+
+Quando una misura non torna, l'audio è la prova. L'ultimo tiro misurato può
+essere **salvato come WAV** nella cartella che scegliete (o condiviso): il file
+non viene creato se non lo chiedete, quindi i tiri normali non occupano spazio.
+Con quel file si controlla cosa ha sentito il microfono, e lo stesso file si può
+far analizzare al banco di prova del progetto (vedi
+[README.md](README.md#analizzare-una-registrazione-reale-telemetro-acustico)).
+
+### Consigli pratici
+
+- **Telefono fermo**: appoggiato a terra o su un treppiede, non in mano. Il
+  motore scarta i tiri mentre il telefono si muove.
+- **Una freccia per volta**, senza parlato sopra lo scocco: la voce è larga di
+  banda quasi quanto un urto, ed è il disturbo che confonde più spesso.
+- **Microfono libero**: niente mani o fodera davanti al foro del microfono.
+- **Calibrate con la stessa posizione** che userete per misurare (stesso
+  telefono, stessa distanza dalla linea): il modello è dell'arco, ma il suono
+  cambia con la stanza.
+- **Rifate la calibrazione** se cambiate frecce, libbraggio o fino a corda.
+
+### Se qualcosa non torna
+
+| Sintomo | Cosa guardare |
+|---|---|
+| Nessuna misura, forma d'onda piatta | Permesso del microfono, telefono in custodia, foro del microfono coperto. |
+| Il tiro non viene agganciato | Pavimento di rilascio: a distanze grandi la corda arriva più debole. Avvicinate il telefono alla linea (1–3 m). |
+| Distanza corta e velocità altissima, in verde o rosso | L'impatto è caduto fuori dal campo e il motore ha scartato un'onda della coda. Controllate la calibrazione e il campo: la distanza mostrata deve stare fra le distanze dei tiri di calibrazione. |
+| Tutti i tiri verdi ma distanze sbagliate | Il modello è calibrato su distanze sbagliate: rifate la calibrazione guidata, un tiro per distanza, con il metro. |
+| Il clicker non viene riconosciuto | Dichiaratelo nel profilo con l'offset giusto, oppure lasciate che lo riconosca: serve un click secco prima della corda. |
+
 ## Verifica distanza (GPS)
 
 Serve a misurare a piedi la distanza fra due punti e confrontarla con quella

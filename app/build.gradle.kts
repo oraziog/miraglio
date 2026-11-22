@@ -12,6 +12,38 @@ plugins {
     alias(libs.plugins.roborazzi)
 }
 
+// ---------------------------------------------------------------------------
+// Numero sequenziale delle build di prova (D1, D2, D3, ...).
+//
+// Le prove sul telefono si fanno installando l'APK di release (firma vera),
+// quindi una build di prova e quella pubblicata hanno lo stesso versionCode e
+// la stessa versione: senza un'etichetta non si sa se sul telefono c'e'
+// l'ultima modifica o quella di prima. Compilando con `-PtestBuild` la
+// versione diventa "1.0.10 (D5)" — si vede nella barra in alto, in
+// Impostazioni e nelle info dell'app — e il numero si alza da solo a ogni
+// build di prova.
+//
+//   ./gradlew :app:assembleRelease -PtestBuild
+//
+// Il contatore sta in `debug_version.txt`, nella radice e fuori dal repository
+// (vedi .gitignore). Senza il parametro la versione resta "1.0.10": l'APK che
+// si pubblica su GitHub non porta nessuna etichetta.
+// ---------------------------------------------------------------------------
+val numeroBuildDiProva: Int? = if (providers.gradleProperty("testBuild").isPresent) {
+    val contatore = rootProject.file("debug_version.txt")
+    val ultimo = contatore.takeIf { it.exists() }
+        ?.readText()
+        ?.trim()
+        ?.toIntOrNull()
+        ?: 0
+    val prossimo = ultimo + 1
+    contatore.writeText("$prossimo\n")
+    logger.lifecycle("Build di prova numero $prossimo (D$prossimo)")
+    prossimo
+} else {
+    null
+}
+
 android {
     namespace = "com.miraglio"
     compileSdk = 35
@@ -24,8 +56,9 @@ android {
         // la propria con l'etichetta della release piu' recente su GitHub e
         // propone l'aggiornamento solo se quella e' piu' alta. Etichetta e
         // versione vanno mantenute allineate (tag v1.0.2 = versionName 1.0.2).
-        versionCode = 10
-        versionName = "1.0.9"
+        versionCode = 11
+        // Fuori dalle prove la versione e' quella pubblicata, senza suffissi.
+        versionName = numeroBuildDiProva?.let { "1.0.10 (D$it)" } ?: "1.0.10"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -147,6 +180,13 @@ android {
         // Icona adattiva in mipmap-anydpi-v26 anche se minSdk=26: e' la
         // configurazione che AAPT2 accetta per <adaptive-icon>.
         disable += "ObsoleteSdkInt"
+        // "Non stai puntando all'ultima versione di Android". Il progetto
+        // dichiara compileSdk/targetSdk 35, che e' l'ultima API supportata
+        // dall'AGP 8.7.3 in uso: alzarla richiede prima un aggiornamento del
+        // toolchain (AGP + Gradle), una decisione a parte che non appartiene a
+        // questa release. Non e' un difetto del codice: si riaccende insieme
+        // all'AGP.
+        disable += "OldTargetApi"
     }
 }
 
@@ -252,6 +292,38 @@ dependencies {
 // -PautoClicker=true (il motore decide da solo se il clicker c'è) e
 // -PreleaseFloor=0.05 (pavimento di ampiezza della corda che parte).
 // ---------------------------------------------------------------------------
+tasks.register<JavaExec>("analyzeImpactOnset") {
+    group = "verification"
+    description =
+        "Misura l'inizio dell'attacco dell'impatto sulle registrazioni vere (verifica offline)."
+    dependsOn("compileDebugUnitTestKotlin")
+    classpath =
+        files(
+            layout.buildDirectory.dir("tmp/kotlin-classes/debug"),
+            layout.buildDirectory.dir("tmp/kotlin-classes/debugUnitTest")
+        ) + configurations.getByName("debugUnitTestRuntimeClasspath")
+    mainClass.set("com.miraglio.tools.ImpactOnsetProbe")
+}
+
+// La stessa misura sulla registrazione intera dei quaranta tiri a 70 m: il
+// percorso del WAV si cambia con -Pwav=... (default: quello prodotto da
+//ffmpeg in app/build/audio).
+tasks.register<JavaExec>("analyzeImpactOnsetFull") {
+    group = "verification"
+    description =
+        "Misura il ritardo dell'attacco su tutti i quaranta tiri a 70 m (verifica offline)."
+    dependsOn("compileDebugUnitTestKotlin")
+    classpath =
+        files(
+            layout.buildDirectory.dir("tmp/kotlin-classes/debug"),
+            layout.buildDirectory.dir("tmp/kotlin-classes/debugUnitTest")
+        ) + configurations.getByName("debugUnitTestRuntimeClasspath")
+    mainClass.set("com.miraglio.tools.ImpactOnsetProbe")
+    val wav = (findProperty("wav") as String?)
+        ?: layout.buildDirectory.file("audio/tiri_70m.wav").get().asFile.absolutePath
+    args(wav)
+}
+
 tasks.register<JavaExec>("analyzeShotAudio") {
     group = "verification"
     description =

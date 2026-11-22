@@ -95,6 +95,39 @@ class BallisticCalculatorTest {
         }
     }
 
+    /**
+     * Punti che dicono "la freccia accelera" non devono produrre una velocità
+     * extrapolata a 0 m.
+     *
+     * È il caso del 21/11/2026: tre tiri a 5 m misurati 0,17–0,18 s e uno a
+     * 10 m a 0,215 s (32 m/s contro 54). Il decadimento veniva bloccato a zero
+     * — giusto — ma `v0` restava l'intercetta della retta, 17,4 m/s: a 18 m il
+     * tiro tornava "sei metri". Con il decadimento a zero la costante giusta è
+     * la media geometrica delle velocità, e il tiro a 18 m torna vicino ai
+     * 18 m veri (Δt 0,385 s).
+     */
+    @Test
+    fun conUnaPendenzaPositivaLaVelocitaNonSiEstrappolaAZero() {
+        val punti = listOf(
+            BallisticPoint(5f, 0.180f, 20f),
+            BallisticPoint(5f, 0.185f, 20f),
+            BallisticPoint(10f, 0.215f, 20f)
+        )
+
+        val fitted = BallisticCalculator.fit(punti)
+        assertNotNull(fitted)
+        assertEquals("il decadimento non può essere negativo", 0f, fitted!!.decayPerM, 1e-6f)
+        assertTrue(
+            "v0 extrapolata a 0 m: ${fitted.muzzleSpeedMs} m/s",
+            fitted.muzzleSpeedMs > 35f
+        )
+
+        // Le velocità misurate stanno fra 30 e 54 m/s: la costante del modello
+        // deve stare in mezzo, non sotto tutte.
+        val distanza = BallisticCalculator.distance(0.385f, fitted, 20f)!!
+        assertTrue("18 m letti come $distanza m", distanza > 12f)
+    }
+
     /** Due tiri alla stessa distanza non sono due distanze di calibrazione. */
     @Test
     fun unaSolaDistanzaNonBasta() {

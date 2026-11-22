@@ -8,9 +8,6 @@ import androidx.compose.material3.Surface
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.test.assertIsOn
-import androidx.compose.ui.test.assertIsOff
-import androidx.compose.ui.test.isToggleable
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
@@ -47,7 +44,7 @@ import org.robolectric.annotation.GraphicsMode
  *
  * Copre anche quello che i numeri non vedono: il verde scuro sul tema scuro
  * sarebbe illeggibile, e il testo ingrandito dell'outdoor potrebbe spingere
- * l'interruttore o il motivo fuori dalla card. I PNG attesi stanno in
+ * il motivo fuori dalla card. I PNG attesi stanno in
  * `app/src/test/screenshots/` e sono versionati.
  */
 @RunWith(AndroidJUnit4::class)
@@ -72,16 +69,13 @@ class AudioRangefinderScreenshotTest {
     private fun report(
         distanceM: Float,
         evidence: ImpactEvidence,
-        fieldRangeM: ClosedFloatingPointRange<Float>?,
         clicker: Boolean
     ): ShotReport = requireNotNull(
         ShotReportBuilder.build(
             totalTimeS = BallisticCalculator.flightTime(distanceM, model, 20f),
             model = model,
             airTempC = 20f,
-            pitchDeg = 0f,
             evidence = evidence,
-            fieldRangeM = fieldRangeM,
             clickerDetected = clicker
         )
     )
@@ -89,7 +83,6 @@ class AudioRangefinderScreenshotTest {
     private fun disegna(
         file: String,
         report: ShotReport?,
-        fieldMode: Boolean = true,
         dark: Boolean = false,
         outdoor: Boolean = false,
         stageText: String = "Misurato"
@@ -113,13 +106,13 @@ class AudioRangefinderScreenshotTest {
                                 hasProfile = true,
                                 canMeasure = true,
                                 hasMicrophone = true,
-                                fieldMode = fieldMode,
                                 waveform = emptyList(),
+                                releaseMarker = null,
+                                impactMarker = null,
                                 zoom = 1f,
                                 onStart = {},
                                 onStop = {},
-                                onZoom = {},
-                                onFieldMode = {}
+                                onZoom = {}
                             )
                         }
                     }
@@ -148,15 +141,13 @@ class AudioRangefinderScreenshotTest {
         )
     }
 
-    /** Verde: banda larga, distanza nel campo, clicker riconosciuto. */
+    /** Verde: banda larga e clicker riconosciuto. */
     @Test
     fun schedaVerdeChiaro() {
         disegna(
             "audio_rangefinder_green.png",
-            report(30f, ImpactEvidence.PEAK_IN_BAND, 5f..50f, clicker = true)
+            report(30f, ImpactEvidence.PEAK_IN_BAND, clicker = true)
         )
-        composeRule.onNode(isToggleable()).assertIsOn()
-        assertVisibile("Campo H&S 5–50 m")
         assertVisibile("Verde: impatto a banda larga dentro la finestra fisica.")
         assertVisibile("riconosciuto in ascolto")
     }
@@ -166,31 +157,20 @@ class AudioRangefinderScreenshotTest {
     fun schedaGiallaSenzaBandaLarga() {
         disegna(
             "audio_rangefinder_amber.png",
-            report(30f, ImpactEvidence.LOW_IN_BAND, 5f..50f, clicker = false)
+            report(30f, ImpactEvidence.LOW_IN_BAND, clicker = false)
         )
-        composeRule.onNode(isToggleable()).assertIsOn()
         assertVisibile("Giallo: impatto grave senza conferma acuta")
         assertVisibile("nessun click sentito")
     }
 
-    /** Giallo per estrapolazione: 55 m con il campo dichiarato 5–50. */
+    /** Rosso: impatto fuori dal campo di calibrazione (o nessun candidato). */
     @Test
-    fun schedaGiallaFuoriCampo() {
-        disegna(
-            "audio_rangefinder_out_of_field.png",
-            report(55f, ImpactEvidence.PEAK_IN_BAND, 5f..50f, clicker = true)
-        )
-        assertVisibile("Giallo: distanza fuori dal campo 5–50 m")
-    }
-
-    /** Rosso: nessun impatto nella finestra fisica, la misura è un ripiego. */
-    @Test
-    fun schedaRossaRipiego() {
+    fun schedaRossaFuoriDalCampo() {
         disegna(
             "audio_rangefinder_red.png",
-            report(30f, ImpactEvidence.OUT_OF_BAND, 5f..50f, clicker = false)
+            report(30f, ImpactEvidence.OUT_OF_BAND, clicker = false)
         )
-        assertVisibile("Rosso: nessun impatto nella finestra fisica")
+        assertVisibile("Rosso: fuori dal campo di calibrazione")
     }
 
     /** Tema scuro: gli stessi tre colori devono restare leggibili. */
@@ -198,7 +178,7 @@ class AudioRangefinderScreenshotTest {
     fun schedaVerdeTemaScuro() {
         disegna(
             "audio_rangefinder_green_dark.png",
-            report(30f, ImpactEvidence.PEAK_IN_BAND, 5f..50f, clicker = true),
+            report(30f, ImpactEvidence.PEAK_IN_BAND, clicker = true),
             dark = true
         )
         assertVisibile("Verde: impatto a banda larga dentro la finestra fisica.")
@@ -209,23 +189,10 @@ class AudioRangefinderScreenshotTest {
     fun schedaOutdoorTestiGrandi() {
         disegna(
             "audio_rangefinder_outdoor.png",
-            report(30f, ImpactEvidence.PEAK_IN_BAND, 5f..50f, clicker = true),
+            report(30f, ImpactEvidence.PEAK_IN_BAND, clicker = true),
             outdoor = true
         )
-        assertVisibile("Campo H&S 5–50 m")
         assertVisibile("Verde: impatto a banda larga dentro la finestra fisica.")
-    }
-
-    /** Interruttore spento: nessun colore inventato, il motivo non c'è. */
-    @Test
-    fun schedaCampoSpento() {
-        disegna(
-            "audio_rangefinder_field_off.png",
-            report(30f, ImpactEvidence.PEAK_IN_BAND, null, clicker = false),
-            fieldMode = false
-        )
-        composeRule.onNode(isToggleable()).assertIsOff()
-        assertVisibile("Distanza (in linea d'aria)")
     }
 
     /** Nessun impatto: la scheda resta leggibile e non mostra una distanza. */

@@ -14,6 +14,7 @@ import com.miraglio.data.profile.CalibrationShot
 import com.miraglio.data.sensor.Inclinometer
 import com.miraglio.data.sensor.MotionMonitor
 import com.miraglio.data.weather.WeatherRepository
+import com.miraglio.domain.audio.ImpactPlausibility
 import com.miraglio.domain.audio.ShotStage
 import com.miraglio.domain.audio.ShotTimingState
 import com.miraglio.domain.ballistics.ArrowSpeedModel
@@ -63,7 +64,7 @@ class AudioCalibrationViewModel @Inject constructor(
     )
 
     /** Cosa è appena successo, per il messaggio sotto il pulsante. */
-    enum class Notice { SAVED, SAVED_WITHOUT_TIME, INVALID_DISTANCE, CAPTURE_FAILED }
+    enum class Notice { SAVED, SAVED_WITHOUT_TIME, INVALID_DISTANCE, CAPTURE_FAILED, TIMED_OUT }
 
     data class UiState(
         val profiles: List<BowProfile> = emptyList(),
@@ -74,6 +75,8 @@ class AudioCalibrationViewModel @Inject constructor(
         val listening: Boolean = false,
         val pending: PendingShot? = null,
         val notice: Notice? = null,
+        /** WAV dell'ultima sessione, da condividere per l'analisi. */
+        val debugAudioPath: String? = null,
         val model: ArrowSpeedModel? = null,
         val canMeasure: Boolean = false
     )
@@ -160,19 +163,42 @@ class AudioCalibrationViewModel @Inject constructor(
             )
 
             var cancelled = false
+            var captureFailed = false
             try {
-                val finalState = rangefinder.measure(
+                val result = rangefinder.measure(
                     useClicker = profile.useClicker,
                     releaseOffsetMs = profile.releaseOffsetMs,
                     // In calibrazione il modello è proprio quello che si sta
                     // costruendo: una banda ricavata da pochi punti
-                    // scarterebbe i tiri che servono a correggerlo. Nessun
-                    // veto, non la vecchia finestra 1,0–2,0 s dei 70 m.
-                    plausibleTotalTimeS = null,
+                    // scarterebbe i tiri che servono a correggerlo. Ma la
+                    // distanza la conosce l'arciere, quindi la banda si ricava
+                    // da lì e dalle velocità fisicamente possibili. Senza,
+                    // la finestra fissa dei 0,15 s perdeva il battifreccia a
+                    // 5 m (~0,107 s) e il punto che entrava nel fit valeva
+                    // 31 m/s contro i 54 veri.
+                    plausibleTotalTimeS = ImpactPlausibility.bandAtKnownDistance(
+                        distance,
+                        resolveCachedTemperature()
+                    ),
                     stability = motion.stable,
+                    // Nome neutro: finisce nel nome del WAV, non a schermo.
+                    debugLabel = "calibration_" + distance + "m",
                     onState = { publishStage(it) }
                 )
-                handleResult(finalState, distance, lockedPitch, profile.id)
+                captureFailed = !result.microphoneOpened
+                _state.value = _state.value.copy(
+                    debugAudioPath = result.debugAudioPath ?: _state.value.debugAudioPath
+                )
+                if (result.timedOut) {
+                    // Scadenza senza tiro: non è un tiro mancato, non si salva
+                    // niente sul profilo. Prima finiva in un punto senza tempo.
+                    _state.value = _state.value.copy(
+                        stage = result.state.stage,
+                        notice = Notice.TIMED_OUT
+                    )
+                } else {
+                    handleResult(result.state, distance, lockedPitch, profile.id)
+                }
             } catch (stop: CancellationException) {
                 cancelled = true
                 _state.value = _state.value.copy(stage = ShotStage.IDLE)
@@ -181,7 +207,7 @@ class AudioCalibrationViewModel @Inject constructor(
                 runCatching { motion.stop() }
                 runCatching { location.stopLocationUpdates() }
                 inclinometer.stop()
-                val failed = !cancelled && _state.value.stage == ShotStage.IDLE
+                val failed = !cancelled && captureFailed
                 _state.value = _state.value.copy(
                     listening = false,
                     notice = if (failed) Notice.CAPTURE_FAILED else _state.value.notice

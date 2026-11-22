@@ -66,6 +66,9 @@ internal class BroadbandPeakDetector(
     /** La storia dell'inviluppo per il confronto di salita (un attacco contro una coda). */
     private val riseWindow = (sampleRateHz * riseWindowMs / 1000.0).toInt().coerceAtLeast(1)
     private val riseHistory = DoubleArray(riseWindow)
+
+    /** Il campione di ogni posto di [riseHistory]: serve a datare il fronte. */
+    private val riseIndexHistory = LongArray(riseWindow)
     private var risePosition = 0
     private var riseFilled = 0
 
@@ -97,6 +100,7 @@ internal class BroadbandPeakDetector(
         rising = false
         pending = null
         riseHistory.fill(0.0)
+        riseIndexHistory.fill(0L)
         risePosition = 0
         riseFilled = 0
     }
@@ -123,6 +127,7 @@ internal class BroadbandPeakDetector(
         val broadband = lowEnvelope + midEnvelope
 
         riseHistory[risePosition] = broadband
+        riseIndexHistory[risePosition] = index
         risePosition = (risePosition + 1) % riseWindow
         if (riseFilled < riseWindow) riseFilled++
 
@@ -161,14 +166,53 @@ internal class BroadbandPeakDetector(
 
     private fun peakAt(index: Long, amplitude: Double): AcousticEvent? {
         if (amplitude < floor || !isBroadband(previousLow, previousMid)) return null
+        // Il picco è un attacco se sale di [riseFactor] volte il minimo dei 60
+        // ms precedenti; il suo fronte, se lo è, è dove l'inviluppo attraversa
+        // metà della salita. Un picco che non è un attacco non ha un fronte: si
+        // data sul massimo, come prima.
+        val minimo = riseMinimum()
+        val attacco = minimo != null && amplitude >= riseFactor * max(minimo.first, floor)
         return AcousticEvent(
             branch = ShotBranch.IMPACT_PEAK,
             startIndex = index,
             peakIndex = index,
             endIndex = index,
             peakAmplitude = amplitude.toFloat(),
-            isAttack = isNewAttack(amplitude)
+            isAttack = attacco,
+            onsetIndex = if (attacco) halfRiseOnset(index, amplitude) else index
         )
+    }
+
+    /**
+     * Il fronte della salita: l'ultimo campione prima del massimo in cui
+     * l'inviluppo stava ancora sotto metà del picco.
+     *
+     * Non si usa il minimo dei 60 ms, che è solo un **limite inferiore**: in una
+     * pausa quieta il minimo cade sul bordo della finestra, fino a 60 ms prima
+     * del picco, e daterebbe l'attacco molto prima del vero. Su un urto dopo
+     * una pausa di 125 ms (il caso sintetico di `ShotTimingTest`) il minimo
+     * finiva 125 ms prima del massimo e faceva sembrare dentro il campo un
+     * attacco che ne era fuori. Il passaggio per metà ampiezza, invece, cade
+     * sul fianco della salita: misurato sui tiri veri, 4–33 ms prima del
+     * massimo.
+     *
+     * Se nella finestra l'inviluppo non è mai sceso sotto metà (una salita
+     * lentissima sopra un fondo alto) il fronte non è databile e resta il
+     * massimo: meglio nessuna informazione che una sbagliata.
+     */
+    private fun halfRiseOnset(peak: Long, amplitude: Double): Long {
+        val count = if (riseFilled < riseWindow) riseFilled else riseWindow
+        if (count == 0) return peak
+        val oldest = if (riseFilled < riseWindow) 0 else risePosition
+        val soglia = amplitude * 0.5
+        var fronte = peak
+        for (k in 0 until count) {
+            val pos = (oldest + k) % riseWindow
+            val indice = riseIndexHistory[pos]
+            if (indice >= peak) continue
+            if (riseHistory[pos] < soglia) fronte = indice
+        }
+        return fronte
     }
 
     private fun isBroadband(low: Double, mid: Double): Boolean {
@@ -177,7 +221,8 @@ internal class BroadbandPeakDetector(
     }
 
     /**
-     * Vero se il picco nasce da un attacco e non è un'onda della coda.
+     * Il punto più basso dell'inviluppo negli ultimi 60 ms e il campione in cui
+     * cade: è il piede della salita, cioè il fronte dell'attacco.
      *
      * In una coda riverberante l'inviluppo scende e risale di poco: ogni
      * massimo locale vale 1,1–2 volte il minimo dei 60 ms precedenti, che è il
@@ -186,12 +231,16 @@ internal class BroadbandPeakDetector(
      * limitato dal pavimento: sul silenzio digitale il rapporto sarebbe
      * infinito e non direbbe niente.
      */
-    private fun isNewAttack(amplitude: Double): Boolean {
+    private fun riseMinimum(): Pair<Double, Long>? {
         var lowest = Double.MAX_VALUE
+        var at = -1
         val count = if (riseFilled < riseWindow) riseFilled else riseWindow
         for (i in 0 until count) {
-            if (riseHistory[i] < lowest) lowest = riseHistory[i]
+            if (riseHistory[i] < lowest) {
+                lowest = riseHistory[i]
+                at = i
+            }
         }
-        return amplitude >= riseFactor * max(lowest, floor)
+        return if (at < 0) null else lowest to riseIndexHistory[at]
     }
 }

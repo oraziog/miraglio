@@ -15,6 +15,10 @@ app/build/
 local.properties
 
 # ---------------------------------------------------------------------------
+# Contatore delle build di prova (D1, D2, ...): e' lo stato di questa macchina,
+# non un file del progetto, e non deve arrivare a chi compila la release.
+debug_version.txt
+
 # Firma di rilascio: la chiave e la sua password non entrano nel repository
 # ---------------------------------------------------------------------------
 keystore.properties
@@ -45,6 +49,12 @@ keystore.properties
 analisi_tiri/
 
 # ---------------------------------------------------------------------------
+# Pagina locale delle build di prova (D1, D2, ...): l'APK e' gia' ignorato da
+# *.apk, la pagina e la nota sono di questa macchina e non servono al progetto.
+# ---------------------------------------------------------------------------
+download_page/
+
+# ---------------------------------------------------------------------------
 # IDE
 # ---------------------------------------------------------------------------
 .idea/
@@ -62,7 +72,7 @@ Thumbs.db
 # ---------------------------------------------------------------------------
 # Artefatti derivati, presenti nella cartella dei sorgenti
 # ---------------------------------------------------------------------------
-# Dump unico di tutti i .kt, rigenerabile con app/src/main/UnisciKotlin.ps1
+# Dump unico di tutti i .kt e backup dell'intero sorgente: non fanno parte del
+# progetto (si rigenerano dal repository).
 app/src/main/Codice_klotin_Unito.txt
-# Backup dell'intero sorgente: non fa parte del progetto
 app/src/main/*.7z

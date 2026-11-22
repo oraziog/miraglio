@@ -33,6 +33,15 @@ class AppVersionTest {
     }
 
     @Test
+    fun etichettaDelleBuildDiProvaNonCambiaLaVersione() {
+        // Sulle build di prova la versione installata e' "1.0.9 (D5)": il
+        // confronto con le release deve restare quello della 1.0.9.
+        assertEquals(version("1.0.9"), version("1.0.9 (D5)"))
+        assertFalse(version("1.0.9 (D5)") > version("1.0.9"))
+        assertTrue(version("1.0.10") > version("1.0.9 (D5)"))
+    }
+
+    @Test
     fun partiMancantiValgonoZero() {
         assertEquals(version("1.1"), version("1.1.0"))
         assertEquals(0, version("1.1.0.0").compareTo(version("1.1")))
@@ -44,6 +53,7 @@ class AppVersionTest {
         assertNull(AppVersion.parse("release-finale"))
         assertNull(AppVersion.parse(""))
         assertNull(AppVersion.parse("v"))
+        assertNull(AppVersion.parse("(D5)"))
     }
 
     @Test

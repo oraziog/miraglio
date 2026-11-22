@@ -5,8 +5,8 @@ import com.miraglio.domain.ballistics.BallisticCalculator
 
 /**
  * Quello che si può dire di un tiro misurato: il tempo, la distanza, la
- * distanza orizzontale, la velocità della freccia a quel bersaglio, e quanto
- * il numero merita fiducia ([quality]).
+ * velocità della freccia a quel bersaglio, e quanto il numero merita fiducia
+ * ([quality]).
  *
  * Sta fuori dalla ViewModel perché è la parte che sbaglia i conti: la
  * schermata non deve decidere niente di numerico, solo mostrare.
@@ -14,9 +14,7 @@ import com.miraglio.domain.ballistics.BallisticCalculator
 data class ShotReport(
     val totalTimeS: Float,
     val distanceM: Float,
-    val horizontalDistanceM: Float,
     val speedMs: Float?,
-    val pitchDeg: Float,
     /** Verde/giallo/rosso: quanto è solida la scelta dell'impatto. */
     val quality: ShotQuality,
     /** In ascolto il motore ha sentito il pattern click→corda. */
@@ -32,16 +30,14 @@ object ShotReportBuilder {
      * caso la distanza non esiste e non si inventa (vedi
      * [BallisticCalculator.distance]).
      *
-     * [evidence] e [fieldRangeM] non cambiano il numero: servono a dire
-     * quanta fiducia merita ([ShotQuality.evaluate]).
+     * [evidence] non cambia il numero: serve a dire quanta fiducia merita
+     * ([ShotQuality.evaluate]).
      */
     fun build(
         totalTimeS: Float,
         model: ArrowSpeedModel?,
         airTempC: Float,
-        pitchDeg: Float,
         evidence: ImpactEvidence = ImpactEvidence.BROADBAND_IN_BAND,
-        fieldRangeM: ClosedFloatingPointRange<Float>? = null,
         clickerDetected: Boolean = false
     ): ShotReport? {
         if (!totalTimeS.isFinite() || totalTimeS <= 0f) return null
@@ -50,10 +46,8 @@ object ShotReportBuilder {
         return ShotReport(
             totalTimeS = totalTimeS,
             distanceM = distance,
-            horizontalDistanceM = BallisticCalculator.horizontalDistance(distance, pitchDeg),
             speedMs = speed,
-            pitchDeg = pitchDeg,
-            quality = ShotQuality.evaluate(distance, evidence, fieldRangeM),
+            quality = ShotQuality.evaluate(evidence),
             clickerDetected = clickerDetected
         )
     }

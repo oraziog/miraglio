@@ -25,7 +25,6 @@ class AppSettingsStore @Inject constructor(
         private const val KEY_OUTDOOR = "outdoor_mode"
         private const val KEY_UNIT_SYSTEM = "unit_system"
         private const val KEY_PORTRAIT_LOCK = "portrait_lock"
-        private const val KEY_HUNTING_FIELD = "hunting_field_mode"
     }
 
     private val prefs: SharedPreferences =
@@ -98,22 +97,4 @@ class AppSettingsStore @Inject constructor(
         _portraitLocked.value = locked
     }
 
-    // Spento di default, e non per prudenza generica: misurato sui quaranta
-    // tiri a 70 m, con la finestra 5–50 accesa un profilo calibrato 65–75 m
-    // prende un transiente iniziale in 19 tiri su 39 (Δ medio 0,839 s invece
-    // di 1,441). Chi tira a distanza nota non deve ritrovarsi la misura
-    // rotta da un default; chi fa campo H&S lo accende una volta e resta.
-    private val _huntingFieldMode = MutableStateFlow(prefs.getBoolean(KEY_HUNTING_FIELD, false))
-
-    /**
-     * Campo H&S 5–50 m: la finestra di plausibilità dell'impatto comprende
-     * anche i bersagli fuori dalle distanze di calibrazione.
-     */
-    val huntingFieldMode: StateFlow<Boolean> = _huntingFieldMode.asStateFlow()
-
-    fun setHuntingFieldMode(enabled: Boolean) {
-        if (_huntingFieldMode.value == enabled) return
-        prefs.edit().putBoolean(KEY_HUNTING_FIELD, enabled).apply()
-        _huntingFieldMode.value = enabled
-    }
 }

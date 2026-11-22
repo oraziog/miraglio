@@ -41,6 +41,10 @@ data class AppVersion(private val numbers: List<Int>) : Comparable<AppVersion> {
             val digits = raw.trim()
                 .removePrefix("v")
                 .removePrefix("V")
+                // Etichetta delle build di prova: "1.0.9 (D5)" e' la 1.0.9.
+                // Senza questo taglio il numero fra parentesi non si leggerebbe
+                // e l'app si crederebbe piu' vecchia di quello che e'.
+                .substringBefore(" (")
                 .substringBefore('-')
                 .substringBefore('+')
             val numbers = digits.split('.').mapNotNull { it.trim().toIntOrNull() }

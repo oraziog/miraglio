@@ -57,8 +57,10 @@ ufficiale di Miraglio.
 
 L'app chiede i permessi dove servono davvero: appena si apre chiede la
 **fotocamera** (senza, non si misura), mentre la **posizione** la chiede quando
-apri *Verifica distanza* o salvi un luogo. Se dici no per sbaglio, riapri quella
-schermata e la richiesta torna.
+apri *Verifica distanza* o salvi un luogo, e il **microfono** solo quando apri
+*Telemetro acustico*. Se dici no per sbaglio, riapri quella schermata e la
+richiesta torna. Il telefono non registra e non manda niente: il microfono serve
+solo a datare lo scocco e il battifreccia di ogni tiro.
 
 Poi fai la cosa più importante: **la calibrazione**. Miraglio calcola le distanze
 dalla fotocamera, e la fotocamera di ogni telefono è diversa: **senza calibrare
@@ -71,6 +73,12 @@ minuti.
 La calibrazione resta salvata **solo su quel telefono**: se installi Miraglio su
 un altro telefono, va rifatta da zero. Non copiarla da un telefono all'altro,
 darebbe misure sbagliate.
+
+> **Vuoi provare il telemetro acustico?** È un secondo modo di misurare, col
+> suono invece che con la fotocamera: si apre da *menu ☰ → Telemetro acustico* e
+> ha una sua calibrazione guidata (tiri a distanze note, per esempio 5, 10, 15 e
+> 18 m). La guida completa è nel
+> [manuale d'uso](https://github.com/oraziog/miraglio/blob/master/MANUALE.md#telemetro-acustico--la-distanza-dal-suono).
 
 ## Da qui in avanti si aggiorna da sola
 
