@@ -101,12 +101,14 @@ qualcosa, e uno zoom 1×–8× mostra i due eventi. Il clicker lo riconosce da s
 quando non è dichiarato: la coppia click → corda è distinta da un tiro senza
 clicker, e la conferma arriva dall'impatto che cade nella banda fisica.
 
-![Schermata del telemetro: distanza, velocità, tempo di volo e forma d'onda con i marker di scocco e impatto](docs/img/telemetro-misura.png)
+![Scheda di misura dell'app con un tiro di esempio: distanza, velocità, tempo di volo e forma d'onda con i marker di scocco e impatto](docs/img/telemetro-misura.png)
 
-*La scheda di misura del telefono con un tiro vero: distanza in verde, velocità
-della freccia, tempo di volo e, sotto, la forma d'onda — le due linee bianche
-segnano dove parte il cronometro (scocco) e dove si ferma (impatto), lo zoom a
-2× stringe la finestra invece dell'ampiezza.*
+*La scheda di misura vera dell'app — la stessa che disegna il telefono — con un
+tiro di esempio a 30 m costruito dal modello, non una registrazione reale:
+distanza in verde, velocità della freccia, tempo di volo e, sotto, una forma
+d'onda di esempio — le due linee bianche segnano dove partirebbe il cronometro
+(scocco) e dove si fermerebbe (impatto), lo zoom a 2× stringe la finestra invece
+dell'ampiezza.*
 
 **Verde, giallo, rosso** non sono una confidenza inventata, sono cose viste o
 non viste:

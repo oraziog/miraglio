@@ -200,10 +200,10 @@ class AudioRangefinderScreenshotTest {
     }
 
     /**
-     * La scheda con la forma d'onda vera: i livelli letti dal microfono, le due
-     * linee del tiro (scocco e impatto) e lo zoom a 2×. È l'immagine che il
-     * README mostra per il telemetro, quindi deve contenere il grafico e non un
-     * rettangolo vuoto.
+     * La scheda con la forma d'onda: livelli di esempio costruiti qui, non letti
+     * dal microfono, con le due linee del tiro (scocco e impatto) e lo zoom a 2×.
+     * È l'immagine che il README mostra per il telemetro, quindi deve contenere
+     * il grafico e non un rettangolo vuoto.
      */
     @Test
     fun schedaConLaFormaDOnda() {
