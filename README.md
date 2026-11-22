@@ -2,10 +2,13 @@
 
 ![Miraglio — calcolo balistico tiro 3D: bersaglio misurato, app al centro, arciere](docs/img/banner-miraglio.jpg)
 
-**Miraglio** è un'app Android per arcieri che **stima la distanza del bersaglio con la
-fotocamera del telefono** (modello pinhole + calibrazione focale), permette di
-**verificare la misura camminando con il GPS** e di **salvare i luoghi** (foto +
-misura + coordinate), condivisibili come pin Google Maps, QR code o foto georeferenziata.
+**Miraglio** è un'app Android per arcieri che **misura la distanza del bersaglio in
+due modi indipendenti**: con la **fotocamera** del telefono (modello pinhole +
+calibrazione focale) e con il **suono** (il microfono data lo scocco della corda e
+il battifreccia, il tempo di volo diventa metri e km/h). Il telefono è il
+telemetro: nessun accessorio, nessuna rete. In più permette di **verificare la
+misura camminando con il GPS** e di **salvare i luoghi** (foto + misura +
+coordinate), condivisibili come pin Google Maps, QR code o foto georeferenziata.
 
 > **📲 Installare l'app sul telefono** (guida per chi la usa, non per chi la sviluppa):
 > [INSTALLAZIONE.md](INSTALLAZIONE.md) — download dalla release, conferma di Android,
@@ -18,6 +21,21 @@ misura + coordinate), condivisibili come pin Google Maps, QR code o foto georefe
 ---
 
 ## Funzionalità
+
+### Due telemetri in una app: fotocamera e suono
+
+Le due misure partono da principi diversi e non si sostituiscono: si sceglie
+quella che il momento permette, e si possono confrontare.
+
+| | Con la **fotocamera** | Con il **suono** |
+|---|---|---|
+| Cosa misura | La **geometria**: altezza nota e pixel, focale calibrata | Il **tempo**: scocco → impatto, con il modello del vostro arco |
+| Quando | Bersaglio fermo e inquadrabile, misura a vista in pochi secondi | Bersaglio lontano o fuori dall'inquadratura, misurato **tirando davvero** |
+| Cosa serve | La calibrazione focale, una volta sola | Un profilo arco con tiri a distanze note |
+| In più | Misura qualunque cosa si veda | Dà anche la **velocità della freccia** e la prova audio del tiro |
+
+Se le due misure non tornano, la calibrazione di una delle due è da rifare: è
+anche questo che le rende utili insieme.
 
 ### Misura con la fotocamera (modalità LINEE — è la schermata iniziale)
 - **Pizzica per zoomare** sul bersaglio, premi **Scatta fermo immagine**
@@ -54,7 +72,7 @@ misura + coordinate), condivisibili come pin Google Maps, QR code o foto georefe
   ONNX è lazy e non viene caricato in memoria se non serve; riconoscimento una
   sola volta al fermo immagine, zero inferenza sull'anteprima
 
-### Telemetro acustico — la distanza dal tempo di volo
+### Misura con il suono — il telemetro acustico (la distanza dal tempo di volo)
 
 ![Banner del telemetro acustico: arco, telefono e bersaglio](docs/img/telemetro-banner.jpg)
 

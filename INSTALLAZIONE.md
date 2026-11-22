@@ -5,6 +5,12 @@
 Questa guida serve a chi vuole **usare** Miraglio, non a chi lo sviluppa: si fa
 tutto dal telefono, in cinque minuti, senza computer.
 
+**Cosa fa.** Miraglio misura la distanza del bersaglio in **due modi
+indipendenti**: con la **fotocamera** del telefono (altezza nota e focale
+calibrata) e con il **suono**, cioè dal tempo di volo fra lo scocco della corda e
+il battifreccia, registrato dal microfono. Col suono non serve inquadrare
+niente: si tira, e il telefono dice distanza e velocità della freccia.
+
 Serve un telefono **Android 8.0 o successivo**. Su iPhone Miraglio non funziona.
 
 Miraglio **non è sul Play Store**: si scarica da GitHub. Una volta installata non
